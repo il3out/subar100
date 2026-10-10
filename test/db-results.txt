@@ -60,6 +60,14 @@ Admin
   pass  removed member cannot guess
   pass  removed member cannot rejoin
   pass  restored member plays again
+Admin reset of today's game
+  pass  member cannot reset today
+  pass  signed-out visitor cannot reset
+  pass  reset deletes today's guesses
+  pass  reset opens a new game for today with its own sealed number
+  pass  reset leaves past days alone
+  pass  everyone can guess again after a reset
+  pass  reset is in the audit log
 Concurrency: 12 members guess the right number at the same instant
   pass  exactly one winner
   pass  the other 11 told the day is closed
@@ -72,7 +80,7 @@ Concurrency: one member fires 8 simultaneous guesses
   pass  only one stored
 Hidden number generator
   pass  all 100 values occur
-  pass  uniform (chi-square 95.1 < 150 at 99 df)
+  pass  uniform (chi-square 91.2 < 150 at 99 df)
   pass  range is exactly 1-100
 
-66 passed, 0 failed
+73 passed, 0 failed

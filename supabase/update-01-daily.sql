@@ -203,12 +203,34 @@ $$;
 
 -- ---------------------------------------------------------------- permissions
 revoke execute on all functions in schema public from public, anon, authenticated;
+-- the admin's "Reset today's game" button: deletes today's game, its number and every
+-- guess made today, then opens a new game with a new number. Past days are untouched.
+create or replace function public.reset_today() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare d date := public.kw_today(); old int; c comps;
+begin
+  if not public.is_admin() then raise exception 'Admins only'; end if;
+  select n into old from comps where day = d for update;   -- waits for any guess being saved right now
+  delete from guesses  where day = d;
+  delete from checkins where day = d;
+  delete from comps    where day = d;
+  perform public.log('reset_today', jsonb_build_object('comp', old, 'day', d));
+  c := public.tick();
+  return jsonb_build_object('n', c.n, 'day', c.day);
+end $$;
+revoke execute on function public.reset_today() from public, anon;
+
 grant execute on function
+  public.reset_today(),
   public.join_club(text, text), public.submit_guess(int), public.state(), public.board(),
   public.set_club(text, text), public.set_member_access(uuid, boolean),
   public.admin_guesses(int), public.admin_members(), public.is_member(), public.is_admin(),
   public.kw_today(), public.kw_next_reset()
 to authenticated;
 
+-- guesses made today in the old one-number game would block today's first guess: clear them
+delete from public.checkins where day = public.kw_today();
+delete from public.guesses  where day = public.kw_today() and comp_id in (select id from public.comps where day is null);
+
 -- open today's game now
-select public.tick();
+select n as game_no, day, status from public.tick();

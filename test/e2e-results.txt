@@ -73,6 +73,8 @@ Admin after the games
   pass  admin log reveals numbers once games end
   pass  removed member is locked out
   pass  restored member plays again
+  pass  Reset button starts today's game again with a new number
+  pass  after a reset, players can guess again
 Tablet and desktop
   pass  home tablet: no WCAG 2.1 AA violations
   pass  home tablet: no sideways overflow
@@ -94,4 +96,4 @@ Tablet and desktop
   pass  no console errors
   pass  no failed requests
 
-85 passed, 0 failed
+87 passed, 0 failed

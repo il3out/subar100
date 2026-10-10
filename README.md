@@ -59,6 +59,6 @@ Both suites run against real PostgreSQL 16 with `setup.sql` loaded and a minimal
 Not covered locally: Supabase's own email delivery (password reset) and Realtime. The app also refreshes every minute and whenever it's reopened, so it stays current without Realtime.
 
 ## Later
-- **Reset today's game:** run `supabase/reset-today.sql` in the SQL Editor. It deletes today's game, its number and today's guesses, and rolls a new number. Past days and accounts stay.
+- **Reset today's game:** Admin → Today's game → **Reset today's game** (or run `supabase/reset-today.sql` in the SQL Editor). It deletes today's game, its number and today's guesses, and rolls a new number. Past days and accounts stay.
 - **Pause someone:** Admin → Members → Remove. Their history stays and you can restore them.
 - **Prize or announcement:** Admin → Prize and announcement, at any time.

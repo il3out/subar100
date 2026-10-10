@@ -145,6 +145,21 @@ raises("removed member cannot rejoin", amy, "select public.join_club('Amy')", "r
 val(admin, f"select public.set_member_access('{amy}', true)")
 check("restored member plays again", json.loads(val(amy, "select public.state()"))["member"] == "yes")
 
+print("Admin reset of today's game")
+raises("member cannot reset today", amy, "select public.reset_today()", "admins only")
+raises("signed-out visitor cannot reset", None, "select public.reset_today()", "permission denied")
+unthrottle(); guess(amy, 1 if today_target() != 1 else 2)
+before = su("select c.id from comps c where c.day = public.kw_today()")
+past = su("select count(*) from comps where day < public.kw_today()")
+val(admin, "select public.reset_today()")
+check("reset deletes today's guesses", su("select count(*) from guesses where day = public.kw_today()") == "0")
+check("reset opens a new game for today with its own sealed number",
+      su("select c.id from comps c join comp_secret s on s.comp_id = c.id where c.day = public.kw_today() and c.status = 'open'") not in ("", before))
+check("reset leaves past days alone", su("select count(*) from comps where day < public.kw_today()") == past)
+unthrottle()
+check("everyone can guess again after a reset", guess(amy, 3 if today_target() != 3 else 4)["status"] in ("locked", "won"))
+check("reset is in the audit log", su("select action from audit where action = 'reset_today' limit 1") == "reset_today")
+
 print("Concurrency: 12 members guess the right number at the same instant")
 new_day(); val(admin, "select public.state()")
 t3 = today_target(); racers = []

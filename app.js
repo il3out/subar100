@@ -574,13 +574,15 @@ bind.you = () => {
 /* ---------- admin ---------- */
 function adminView() {
   const c = comp(), A = S.adm, st = S.st;
-  const actLabel = { joined: "joined", made_admin: "became admin", guessed: "guessed", won: "won", opened: "Game opened", edited: "edited the prize or note", removed: "removed a member", restored: "restored a member" };
+  const actLabel = { reset_today: "reset today's game", joined: "joined", made_admin: "became admin", guessed: "guessed", won: "won", opened: "Game opened", edited: "edited the prize or note", removed: "removed a member", restored: "restored a member" };
   return `<div class="view"><div><p class="eyebrow">Club admin</p><h1 class="h1" style="margin-top:6px">Admin</h1></div>
   <div class="grid2"><div style="display:grid;gap:16px">
     <section class="card"><div class="card-h"><h2 class="h3">Today's game</h2><span class="pill ${c.status === "open" ? "pill-red" : "pill-ink"}">${no(c.n)} ${c.status === "open" ? "live" : "won"}</span></div>
       <dl class="kv"><dt>Date</dt><dd>${fDate(c.day + "T12:00:00+03:00")}</dd><dt>Guesses so far</dt><dd>${c.guesses}</dd><dt>Members in</dt><dd>${(st.in_today || []).length} of ${st.players}</dd>
       <dt>Hidden number</dt><dd>${c.status === "open" ? `${ic.lock.replace("<svg", '<svg width="14" height="14" style="vertical-align:-2px"')} Sealed` : c.number}</dd><dt>Next game</dt><dd>Midnight, Kuwait time</dd></dl>
-      <p class="quiet" style="font-size:13px;margin:14px 0 0">A new game opens by itself every day. Nobody can see the number, including you.</p></section>
+      <p class="quiet" style="font-size:13px;margin:14px 0 0">A new game opens by itself every day. Nobody can see the number, including you.</p>
+      <hr class="hr" style="margin:16px 0"><button class="btn btn-ghost btn-block" id="resetBtn">${ic.dice} Reset today's game</button>
+      <p class="quiet" style="font-size:12.5px;margin:8px 0 0">Deletes today's guesses${c.status === "won" ? " and today's win" : ""} and rolls a new number. Past days stay.</p></section>
     <section class="card"><h2 class="h3" style="margin-bottom:12px">Prize and announcement</h2>
       <form id="clubF" class="fields"><div class="field"><label for="pz">Prize (optional)</label><input class="inp" id="pz" maxlength="80" value="${esc(st.prize || "")}" placeholder="For example Dinner at Freej Swaileh"></div>
       <div class="field"><label for="nt">Announcement (optional)</label><textarea class="inp" id="nt" maxlength="280" placeholder="A note everyone sees on the home screen">${esc(st.note || "")}</textarea></div><button class="btn btn-ghost">Save</button></form></section>
@@ -606,6 +608,12 @@ async function loadAdmin() {
 }
 bind.admin = () => {
   if (!S.adm) loadAdmin();
+  $("#resetBtn").onclick = async e => {
+    const c = comp(), n = c.guesses;
+    if (!confirm(`Reset today's game?\n\nThis deletes ${n === 1 ? "today's 1 guess" : `all ${n} of today's guesses`}${c.status === "won" ? " and today's win" : ""}, and rolls a new hidden number. Everyone can guess again. This can't be undone.`)) return;
+    const b = e.currentTarget; b.disabled = true;
+    try { await rpc("reset_today"); toast("Today's game is reset. New number rolled."); S.adm = null; await loadAll(); } catch (x) { toast(errText(x), true); b.disabled = false; }
+  };
   $("#clubF").onsubmit = async e => {
     e.preventDefault(); const b = $("button", e.target); b.disabled = true;
     try { await rpc("set_club", { p_prize: $("#pz").value, p_note: $("#nt").value }); toast("Saved"); await loadAll(); } catch (x) { toast(errText(x), true); }

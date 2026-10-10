@@ -195,6 +195,17 @@ async function join(page, code, name, email) {
   ok("removed member is locked out", (await F.page.textContent(".panel")).includes("paused"));
   await A.page.click(`[data-member="${fid}"]`); await A.page.waitForTimeout(800);
   ok("restored member plays again", (await q1("select removed_at from players where id = $1", [fid])).removed_at === null);
+  // reset today's game from the Admin button
+  await (async () => { await F.page.goto(BASE + "/#/guess"); await F.page.waitForSelector("#num", { timeout: 4000 }); await F.page.fill("#num", "50"); await F.page.click("#lock"); await F.page.click("#go"); await F.page.waitForSelector("#lh"); })().catch(() => { });
+  const before = await q1("select id from comps where day = public.kw_today()");
+  await A.page.goto(BASE + "/#/admin"); await A.page.reload(); await A.page.waitForSelector("#resetBtn");
+  await shot(A.page, "18-admin-reset-phone");
+  A.page.once("dialog", d => d.accept());
+  await A.page.click("#resetBtn"); await A.page.waitForFunction(() => /reset/i.test(document.querySelector("#toast").textContent), null, { timeout: 8000 });
+  const after = await q1("select id from comps where day = public.kw_today()");
+  ok("Reset button starts today's game again with a new number", after.id !== before.id && (await q1("select count(*)::int c from guesses where day = public.kw_today()")).c === 0);
+  await F.page.goto(BASE + "/#/play"); await F.page.reload(); await F.page.waitForSelector(".hero");
+  ok("after a reset, players can guess again", await F.page.isVisible("a[href='#/guess']"));
 
   console.log("Tablet and desktop");
   for (const size of ["tablet", "desktop"]) {
