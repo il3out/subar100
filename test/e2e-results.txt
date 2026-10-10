@@ -2,16 +2,16 @@ Door and joining
   pass  door: no WCAG 2.1 AA violations
   pass  door: no sideways overflow
   pass  wrong password shows a clear error
-  pass  founder lands on home as admin
-  pass  home (no competition): no WCAG 2.1 AA violations
-  pass  home (no competition): no sideways overflow
+  pass  founder code makes you admin
+  pass  today's game is already open, no setup needed
 Admin
-  pass  admin starts a competition
-  pass  admin creates an invite
+  pass  admin sets the prize and note
+  pass  no invite tools remain
   pass  admin: no WCAG 2.1 AA violations
   pass  admin: no sideways overflow
-A friend joins and guesses
-  pass  invited friend joins as a normal member
+A friend signs up with no code and guesses
+  pass  anyone can sign up and play, as a normal member
+  pass  prize shows on home
   pass  home (open): no WCAG 2.1 AA violations
   pass  home (open): no sideways overflow
   pass  guess: no WCAG 2.1 AA violations
@@ -32,7 +32,6 @@ A friend joins and guesses
   pass  home shows the locked number and countdown
   pass  browser storage holds no hidden number
 Second friend wins
-  pass  admin API creates an invite
   pass  exact guess triggers the winner reveal
   pass  winner reveal: no WCAG 2.1 AA violations
   pass  winner reveal: no sideways overflow
@@ -40,15 +39,25 @@ Second friend wins
   pass  winner certificate downloads
 Everyone else sees it closed
   pass  other members get the reveal on their next load
-  pass  home shows the closed state with the number
+  pass  home shows today won, with the number
   pass  guessing is locked after a win
   pass  reveal is not repeated once seen
-Board, recap, profile
-  pass  board: no WCAG 2.1 AA violations
-  pass  board: no sideways overflow
-  pass  recap reveals every guess once won
+Midnight: a day with no winner
+  pass  a new game opens by itself the next day
+  pass  home shows yesterday's result
+  pass  a no-winner day reveals the number at midnight
+  pass  and names the closest guess
+Winners, board, recap, profile
+  pass  Winners tab lists every finished game
+  pass  past numbers strip shows both numbers
+  pass  winners: no WCAG 2.1 AA violations
+  pass  winners: no sideways overflow
+  pass  recap of a no-winner day shows everyone's guesses, closest first
+  pass  recap of a won day shows every guess
   pass  recap: no WCAG 2.1 AA violations
   pass  recap: no sideways overflow
+  pass  board: no WCAG 2.1 AA violations
+  pass  board: no sideways overflow
   pass  profile photo uploads and shows
   pass  profile: no WCAG 2.1 AA violations
   pass  profile: no sideways overflow
@@ -60,25 +69,29 @@ Theme
   pass  home (light): no sideways overflow
   pass  board (light): no WCAG 2.1 AA violations
   pass  board (light): no sideways overflow
-Admin after the win
-  pass  admin log reveals numbers after the win
+Admin after the games
+  pass  admin log reveals numbers once games end
   pass  removed member is locked out
-  pass  admin starts competition 2 after the win
+  pass  restored member plays again
 Tablet and desktop
   pass  home tablet: no WCAG 2.1 AA violations
   pass  home tablet: no sideways overflow
   pass  guess tablet: no WCAG 2.1 AA violations
   pass  guess tablet: no sideways overflow
+  pass  winners tablet: no WCAG 2.1 AA violations
+  pass  winners tablet: no sideways overflow
   pass  admin tablet: no WCAG 2.1 AA violations
   pass  admin tablet: no sideways overflow
   pass  home desktop: no WCAG 2.1 AA violations
   pass  home desktop: no sideways overflow
   pass  guess desktop: no WCAG 2.1 AA violations
   pass  guess desktop: no sideways overflow
+  pass  winners desktop: no WCAG 2.1 AA violations
+  pass  winners desktop: no sideways overflow
   pass  admin desktop: no WCAG 2.1 AA violations
   pass  admin desktop: no sideways overflow
   pass  no API response ever contained the hidden number field
   pass  no console errors
   pass  no failed requests
 
-73 passed, 0 failed
+85 passed, 0 failed

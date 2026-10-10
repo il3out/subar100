@@ -93,7 +93,7 @@ main{display:block;max-width:var(--maxw);margin:0 auto;padding:12px var(--gut) c
   display:flex;gap:2px;padding:6px;border-radius:999px;background:var(--glass-2);
   backdrop-filter:saturate(1.6) blur(18px);-webkit-backdrop-filter:saturate(1.6) blur(18px);
   box-shadow:var(--sh3),inset 0 0 0 1px var(--line);max-width:calc(100vw - 20px)}
-.tabbar a{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:68px;padding:8px 10px 7px;border-radius:999px;
+.tabbar a{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:62px;padding:8px 8px 7px;border-radius:999px;
   font:600 11px/1 Inter;color:var(--ink-2);text-decoration:none;transition:background .25s var(--ease),color .25s}
 .tabbar svg{width:22px;height:22px}
 .tabbar a[aria-current=page]{background:var(--red);color:#fff}
@@ -368,3 +368,19 @@ textarea.inp{min-height:84px;resize:vertical}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;animation-delay:0s!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 ::view-transition-old(root),::view-transition-new(root){animation-duration:.28s;animation-timing-function:var(--ease)}
+
+/* daily games: last result, past numbers, recap, admin code */
+.last{display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit;transition:transform .45s var(--spring)}
+.last:active{transform:scale(.985)}
+.last p{margin:0}
+.strip{display:flex;flex-wrap:wrap;gap:8px}
+.strip .tok{text-decoration:none}
+.row .t:has(.av){display:flex;align-items:center;gap:8px}
+.row .t .av{--s:24px;font-size:10px}
+.table tr.hit td{background:var(--tint)}
+.rank-c{width:28px;color:var(--ink-3);font:400 16px/1 Anton,sans-serif}
+.admin-code{margin-top:2px}
+.admin-code summary{cursor:pointer;font:600 13.5px Inter;color:var(--ink-3);list-style:none;padding:6px 0;width:max-content}
+.admin-code summary::-webkit-details-marker{display:none}
+.admin-code summary::before{content:"+ "}
+.admin-code[open] summary::before{content:"− "}

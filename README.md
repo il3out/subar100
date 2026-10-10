@@ -5,23 +5,22 @@ A private daily 100-sided dice guessing game for Town House 10. Sister app to Su
 Same setup as Subar Sitta: a static web app with no build step on Vercel, and Supabase for sign-in, data and all game logic.
 
 ## The rules, as the database enforces them
-- The server rolls one hidden number from 1 to 100 using the operating system's secure random source (pgcrypto, no modulo bias).
-- It is stored in `comp_secret`, a table no app user can read, admin included. The app is only ever told "won" or "not won".
-- One guess per member per Kuwait calendar day (`unique (user_id, day)`), resetting at midnight Asia/Kuwait. This counts across competitions.
-- A guess is final: members cannot edit or delete guesses, and nobody can edit winners or numbers.
-- Every guess runs in one locked transaction (`submit_guess`): check the day, store the guess with the server clock, compare, close the competition on a match. Simultaneous exact guesses queue on the lock, so exactly one winner is possible.
-- No higher or lower hints. Other members' numbers stay hidden until someone wins, then everything is revealed.
-- Only the admin starts a new competition, and only when none is open.
+- Anyone who creates an account can play. The founder code (in `invites`) only makes its user the admin.
+- Every Kuwait calendar day is its own game, opened automatically on the first visit of the day. No scheduler needed.
+- Each game's hidden number comes from the operating system's secure random source (pgcrypto, no modulo bias) and sits in `comp_secret`, which no app user can read, admin included.
+- One guess per member per day (`unique (user_id, day)`), final, no edits. No higher or lower hints.
+- The first exact guess wins and ends that day's game straight away. Simultaneous exact guesses queue on a row lock, so there is exactly one winner.
+- At midnight Asia/Kuwait the day's game ends: its number and everyone's guesses become visible, winner or not, and the next game opens.
 - Guesses are throttled to one attempt per second per member. Sign-in attempts are rate-limited by Supabase.
 
 ## One-time setup (about 10 minutes)
 
 ### 1. Supabase (new project, not the Subar Sitta one)
 1. supabase.com → **New project**, name it `subar100`.
-2. **Authentication → Sign In / Providers → Email**: turn **off** "Confirm email". Friends join with an invite code.
+2. **Authentication → Sign In / Providers → Email**: turn **off** "Confirm email" so friends can play straight after signing up.
 3. **Authentication → URL Configuration**: set **Site URL** to your SUBAR100 address (for example `https://subar100.com`). Password-reset emails link there.
-4. **SQL Editor → New query**: paste all of `supabase/setup.sql` and click **Run**.
-5. Still in the SQL Editor, read the founder's invite code:
+4. **SQL Editor → New query**: paste all of `supabase/setup.sql` and click **Run**. Then do the same with `supabase/update-01-daily.sql`.
+5. Still in the SQL Editor, read the founder (admin) code:
    ```sql
    select code from public.invites;
    ```
@@ -34,16 +33,16 @@ Same setup as Subar Sitta: a static web app with no build step on Vercel, and Su
 
 `vercel.json` adds the security headers (Content-Security-Policy, no framing, HSTS).
 
-### 3. Join first
-Open the site, choose **Join with invite**, and use the founder's code. The first person to join becomes the admin.
-Then: **Admin → Start competition**, and **Admin → Invites → Create** one code per friend. **Share** sends a link that fills in the code.
+### 3. Join as admin
+Open the site, choose **Create account**, tap **I have an admin code** and enter the founder's code. Then share the link: friends just create an account and play.
 
 ## Files
 - `index.html`, `styles.css`, `app.js`: the whole app
 - `theme.js`: dark is the main mode; the half-circle button in the header switches to light and is remembered per device
 - `die.js`: the 3D 100-faced die on the guess screen (loads only there; falls back to a flat die without WebGL)
 - `config.js`: Supabase URL and publishable key (public by design; the access rules protect the data)
-- `supabase/setup.sql`: tables, access rules, game and admin functions, live updates, founder invite
+- `supabase/setup.sql`: tables, access rules, live updates, founder code
+- `supabase/update-01-daily.sql`: open sign-up, a new game every day, Winners data (run after setup.sql; safe on a live project)
 - `brand/patch.webp`: the embroidered SUBAR100 logo, cut from the approved board
 - `fonts/`: Anton and Inter (SIL Open Font License, licences included)
 - `vendor/supabase.js`: the Supabase browser library (MIT)
@@ -52,11 +51,11 @@ Then: **Admin → Start competition**, and **Admin → Invites → Create** one 
 
 ## Tests
 Both suites run against real PostgreSQL 16 with `setup.sql` loaded and a minimal stand-in for Supabase's `auth` schema (`test/supabase-stub.sql`).
-- `test/db_test.py`: 72 checks. Access rules, invites, hidden-number secrecy, Kuwait day boundary, one guess per day, 12 simultaneous winning guesses (exactly one winner), 8 simultaneous guesses by one member (one stored), random number uniformity (100,000 rolls).
-- `test/e2e.cjs`: 73 checks in Chromium through real PostgREST and the real Supabase client. The full journey on phone, tablet and desktop, including the slider turning the die and a spun die moving the slider, axe WCAG 2.1 AA on every screen in dark and light, no sideways overflow, no console errors, and no API response ever containing the hidden number.
+- `test/db_test.py`: 66 checks. Open sign-up and the admin code, hidden-number secrecy, daily games opening and ending at Kuwait midnight, reveal rules, one guess per day, 12 simultaneous winning guesses (exactly one winner), 12 simultaneous first visits (exactly one game), random number uniformity (100,000 rolls).
+- `test/e2e.cjs`: 85 checks in Chromium through real PostgREST and the real Supabase client. The full journey on phone, tablet and desktop, including the slider turning the die and a spun die moving the slider, axe WCAG 2.1 AA on every screen in dark and light, no sideways overflow, no console errors, and no API response ever containing the hidden number.
 
 Not covered locally: Supabase's own email delivery (password reset) and Realtime. The app also refreshes every minute and whenever it's reopened, so it stays current without Realtime.
 
 ## Later
 - **Pause someone:** Admin → Members → Remove. Their history stays and you can restore them.
-- **Prize or announcement:** Admin → Competition, at any time.
+- **Prize or announcement:** Admin → Prize and announcement, at any time.

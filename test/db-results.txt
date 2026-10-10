@@ -1,83 +1,78 @@
-Joining and access
+Joining
   pass  signed-out visitor cannot read members
   pass  signed-out visitor cannot call the game
   pass  signed-out visitor cannot join
-  pass  bad invite code is refused
-  pass  first member becomes admin (code is case-insensitive)
+  pass  signed-in non-member sees nothing
+  pass  anyone can join without a code
+  pass  wrong admin code is refused
+  pass  a refused code does not create the member
+  pass  founder code makes you admin (any case, dashes ok)
   pass  founder code works only once
-  pass  non-admin cannot create invites
-  pass  invite codes are 8 unambiguous characters
-  pass  second member joins as a non-admin (dashes ignored)
-  pass  signed-in stranger without an invite sees no members
-  pass  signed-in stranger sees no competitions
-  pass  stranger's state says not a member
-  pass  stranger cannot guess
+  pass  name must be 2-24 characters
   pass  member cannot make themselves admin
-  pass  member can rename themselves
   pass  member cannot rename someone else
   pass  avatar must be a small image data URL
-  pass  member cannot read invites table directly... (sees none)
-Competition lifecycle
-  pass  guess with no competition says closed
-  pass  member cannot start a competition
-  pass  only one open competition
+  pass  old invite flow is gone
+Today's game opens on its own
+  pass  state opens game 1 for today
+  pass  loading again does not open another
+  pass  state never carries the hidden number while open
   pass  nobody can read the hidden number (member)
   pass  nobody can read the hidden number (admin)
+  pass  the clock cannot be called from the app
   pass  generator not callable from the app
   pass  audit log cannot be forged
-  pass  state has no hidden number while open
-  pass  competition reports day 1
 Guesses
   pass  rejects guess 0
   pass  rejects guess 101
   pass  rejects guess null
   pass  rejects guess -5
-  pass  rejects decimals
   pass  wrong guess is locked, no hint
-  pass  second guess the same Kuwait day is refused with the first number
-  pass  only one row stored
+  pass  second guess the same day is refused with the first number
   pass  throttle blocks rapid repeats
   pass  member cannot edit their guess
-  pass  member cannot delete their guess
   pass  admin cannot edit guesses
-  pass  admin cannot edit comps directly
-  pass  member cannot insert guesses directly
-  pass  Ben cannot see Amy's number while open
-  pass  Amy sees her own
-  pass  Ben sees Amy is in today (no number)
+  pass  admin cannot edit games directly
+  pass  Ben cannot see Amy's number while today is open
+  pass  Ben sees Amy is in today
   pass  admin log hides numbers while open
-  pass  audit records the guess without the number
-Kuwait day boundary
-  pass  20:59:59 UTC is still the same Kuwait day
-  pass  21:00:00 UTC is the next Kuwait day
-  pass  next reset is Kuwait midnight
-  pass  a new Kuwait day allows a new guess
+Midnight: the day's game ends and a new one opens
+  pass  Kuwait midnight is 21:00 UTC
+  pass  yesterday's game ended with no winner and its number revealed
+  pass  a fresh game 2 is open today
+  pass  everyone can now see yesterday's guesses
+  pass  admin log reveals yesterday's numbers
+  pass  each day rolls a new hidden number row
+  pass  a new day allows a new guess
   pass  leaderboard: Amy 2 guesses, 2-day streak, in today
-  pass  leaderboard has no distance columns
-Winning
-  pass  exact number wins immediately
-  pass  everyone sees the competition closed and the number
-  pass  after the win, other numbers are revealed
-  pass  guessing after a win is closed
-  pass  admin log shows numbers once won
-Members
+Winning ends the day
+  pass  exact number wins straight away
+  pass  everyone sees today won, the number and the winner
+  pass  today's guesses are revealed once won
+  pass  nobody else can guess after the win
+  pass  the 'last game' is today's win
+  pass  next day opens game 3 and leaves the win alone
+Admin
+  pass  member cannot edit the prize
+  pass  prize and announcement reach members
   pass  admin cannot remove themselves
-  pass  removed member reads nothing
-  pass  removed member's state says removed
+  pass  removed member is locked out
   pass  removed member cannot guess
-  pass  restored member reads again
-  pass  revoked invite is refused
+  pass  removed member cannot rejoin
+  pass  restored member plays again
 Concurrency: 12 members guess the right number at the same instant
   pass  exactly one winner
-  pass  everyone else told it is closed
-  pass  exactly one guess stored for that competition
-  pass  winner recorded matches the earliest stored timestamp
+  pass  the other 11 told the day is closed
+  pass  exactly one guess stored for that game
+Concurrency: the first visitors of a new day open exactly one game
+  pass  one game for today
+  pass  one hidden number for it
+  pass  game numbers stay in sequence
 Concurrency: one member fires 8 simultaneous guesses
   pass  only one stored
-  pass  one locked, the rest slowed or refused
 Hidden number generator
   pass  all 100 values occur
-  pass  uniform (chi-square 97.3 < 150 at 99 df)
+  pass  uniform (chi-square 95.1 < 150 at 99 df)
   pass  range is exactly 1-100
 
-72 passed, 0 failed
+66 passed, 0 failed

@@ -14,6 +14,7 @@ const fTime = d => fmt(d, { hour: "2-digit", minute: "2-digit" });
 const plural = (n, w, p = w + "s") => `${n} ${n === 1 ? w : p}`;
 const pad = n => String(n).padStart(2, "0");
 const no = n => `No. ${pad(n)}`;
+const prevDay = () => { const d = new Date(S.st.today + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const buzz = () => navigator.userActivation?.hasBeenActive && navigator.vibrate?.(8);
 
@@ -94,12 +95,13 @@ async function loadAll() {
     S.st = await rpc("state");
     S.offset = Date.parse(S.st.now) - Date.now();
     if (S.st.member === "yes") {
-      const [board, mine, comps, people] = await Promise.all([
+      // every guess the rules let you see: your own, plus everyone's from finished games
+      const [board, all, comps, people] = await Promise.all([
         rpc("board"),
-        sel(sb.from("guesses").select("id,comp_id,day,n,at,is_win").eq("user_id", S.uid).order("at", { ascending: false })),
+        sel(sb.from("guesses").select("id,comp_id,user_id,day,n,at,is_win").order("at", { ascending: false })),
         sel(sb.from("comps").select("*").order("n", { ascending: false })),
         sel(sb.from("players").select("id,name,avatar,joined_at,removed_at"))]);
-      Object.assign(S, { board, mine, comps, people: Object.fromEntries(people.map(p => [p.id, p])) });
+      Object.assign(S, { board, all, mine: all.filter(g => g.user_id === S.uid), comps, people: Object.fromEntries(people.map(p => [p.id, p])) });
     }
     S.err = null;
   } catch (e) { S.err = errText(e); }
@@ -160,7 +162,7 @@ function transition(fn) {
 }
 
 /* ===================== shell ===================== */
-const NAV = [["play", "Play", ic.play], ["board", "Board", ic.board], ["you", "You", ic.you]];
+const NAV = [["play", "Play", ic.play], ["winners", "Winners", ic.pennant], ["board", "Board", ic.board], ["you", "You", ic.you]];
 const isDark = () => document.documentElement.dataset.theme !== "light";
 function shell(active) {
   const nav = S.st?.admin ? [...NAV, ["admin", "Admin", ic.admin]] : NAV;
@@ -186,53 +188,53 @@ function render() {
   S.die?.destroy(); S.die = null;
   if (!S.ready) return;
   if (S.recovery) { bare(); main.innerHTML = doorHTML("reset"); return bindDoor(); }
-  if (!S.uid) { bare(); main.innerHTML = doorHTML(new URLSearchParams(location.search).get("invite") ? "join" : "signin"); return bindDoor(); }
+  if (!S.uid) { bare(); main.innerHTML = doorHTML("signin"); return bindDoor(); }
   if (S.err && !S.st) { bare(); main.innerHTML = `<div class="door"><div class="door-in"><img class="patch" src="brand/patch.webp" alt="SUBAR100"><div class="panel"><p class="h3">Couldn't load SUBAR100</p><p class="muted">${esc(S.err)}</p><button class="btn btn-primary btn-block" id="retry">Try again</button></div></div></div>`; $("#retry").onclick = loadAll; return; }
   if (S.st.member === "none") { bare(); main.innerHTML = doorHTML("redeem"); return bindDoor(); }
   if (S.st.member === "removed") { bare(); main.innerHTML = removedHTML(); $("#out").onclick = signOut; return; }
 
   const [r, arg] = route();
-  const views = { play: playView, guess: guessView, board: boardView, you: youView, comp: () => compView(+arg), admin: adminView };
+  const views = { play: playView, guess: guessView, winners: winnersView, board: boardView, you: youView, comp: () => compView(+arg), admin: adminView };
   const v = views[r] || playView;
   if (r === "admin" && !S.st.admin) return go("play");
-  shell(r === "guess" ? "play" : r === "comp" ? "board" : (views[r] ? r : "play"));
+  shell(r === "guess" ? "play" : r === "comp" ? "winners" : (views[r] ? r : "play"));
   main.innerHTML = v();
   bind[r]?.(arg);
-  document.title = { guess: "Make your guess", board: "Board", you: "You", admin: "Admin", comp: "Competition recap" }[r] ? `${{ guess: "Make your guess", board: "Board", you: "You", admin: "Admin", comp: "Competition recap" }[r]} · SUBAR100` : "SUBAR100";
+  const T = { guess: "Make your guess", winners: "Winners", board: "Leaderboard", you: "You", admin: "Admin", comp: "Game recap" }[r];
+  document.title = T ? `${T} · SUBAR100` : "SUBAR100";
 }
 addEventListener("hashchange", () => { transition(render); scrollTo({ top: 0 }); $("#main").focus({ preventScroll: true }); });
 const bind = {};
 
 /* ---------- door ---------- */
+const adminCode = `<details class="admin-code"><summary>I have an admin code</summary>
+  <div class="field" style="margin-top:10px"><label for="code">Admin code</label><input class="inp code-inp" id="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12"><small>Only for the club admin. Everyone else, leave this closed.</small></div></details>`;
 function doorHTML(mode) {
-  const inv = new URLSearchParams(location.search).get("invite") || "";
   const tabs = mode === "signin" || mode === "join" ? `<div class="seg" role="tablist">
       <button role="tab" aria-selected="${mode === "signin"}" data-mode="signin">Sign in</button>
-      <button role="tab" aria-selected="${mode === "join"}" data-mode="join">Join with invite</button></div>` : "";
+      <button role="tab" aria-selected="${mode === "join"}" data-mode="join">Create account</button></div>` : "";
   const f = {
     signin: `<div class="fields"><div class="field"><label for="em">Email</label><input class="inp" id="em" type="email" autocomplete="email" inputmode="email" required></div>
       <div class="field"><label for="pw">Password</label><input class="inp" id="pw" type="password" autocomplete="current-password" required></div></div>
       <button class="btn btn-primary btn-block" style="margin-top:16px" data-act="signin">Sign in</button>
       <button class="btn btn-quiet btn-block" data-act="forgot">Forgot password</button>`,
-    join: `<div class="fields"><div class="field"><label for="code">Invite code</label><input class="inp code-inp" id="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" value="${esc(inv)}" required><small>From the member who invited you.</small></div>
-      <div class="field"><label for="nm">Your name</label><input class="inp" id="nm" autocomplete="nickname" maxlength="24" placeholder="For example Bu Salem" required></div>
+    join: `<div class="fields"><div class="field"><label for="nm">Your name</label><input class="inp" id="nm" autocomplete="nickname" maxlength="24" placeholder="For example Bu Salem" required></div>
       <div class="field"><label for="em">Email</label><input class="inp" id="em" type="email" autocomplete="email" inputmode="email" required></div>
-      <div class="field"><label for="pw">Password</label><input class="inp" id="pw" type="password" autocomplete="new-password" minlength="8" required><small>At least 8 characters.</small></div></div>
-      <button class="btn btn-primary btn-block" style="margin-top:16px" data-act="join">Create account and join</button>`,
-    redeem: `<p class="h3" style="margin:0 0 4px">One step left</p><p class="muted" style="margin:0 0 16px">Enter your invite code to join the club.</p>
-      <div class="fields"><div class="field"><label for="code">Invite code</label><input class="inp code-inp" id="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" value="${esc(inv)}"></div>
-      <div class="field"><label for="nm">Your name</label><input class="inp" id="nm" maxlength="24" placeholder="For example Bu Salem"></div></div>
-      <button class="btn btn-primary btn-block" style="margin-top:16px" data-act="redeem">Join the club</button>
+      <div class="field"><label for="pw">Password</label><input class="inp" id="pw" type="password" autocomplete="new-password" minlength="8" required><small>At least 8 characters.</small></div>${adminCode}</div>
+      <button class="btn btn-primary btn-block" style="margin-top:16px" data-act="join">Create account and play</button>`,
+    redeem: `<p class="h3" style="margin:0 0 4px">One step left</p><p class="muted" style="margin:0 0 16px">Choose the name your friends will see.</p>
+      <div class="fields"><div class="field"><label for="nm">Your name</label><input class="inp" id="nm" maxlength="24" placeholder="For example Bu Salem"></div>${adminCode}</div>
+      <button class="btn btn-primary btn-block" style="margin-top:16px" data-act="redeem">Start playing</button>
       <button class="btn btn-quiet btn-block" data-act="out">Sign out</button>`,
     reset: `<p class="h3" style="margin:0 0 14px">Choose a new password</p><div class="fields"><div class="field"><label for="npw">New password</label><input class="inp" id="npw" type="password" autocomplete="new-password" minlength="8"><small>At least 8 characters.</small></div></div>
       <button class="btn btn-primary btn-block" style="margin-top:16px" data-act="setpw">Save new password</button>`
   };
   return `<div class="door"><div class="door-in">
-    <p class="eyebrow">A private daily d100 game for friends</p>
+    <p class="eyebrow">A daily d100 game for friends</p>
     <img class="patch" src="brand/patch.webp" alt="SUBAR100" width="330" height="113">
-    <p class="tag">Same friends. A new challenge every day.</p>
+    <p class="tag">Same friends. A new number every day.</p>
     <form class="panel" novalidate data-mode="${mode}">${tabs}${f[mode]}<p class="err" id="err" role="alert"></p></form>
-    <p class="door-foot">Town House 10. Members only.</p></div></div>`;
+    <p class="door-foot">Town House 10</p></div></div>`;
 }
 function bindDoor() {
   const form = $(".panel");
@@ -260,19 +262,17 @@ function bindDoor() {
       }
       if (a === "join") {
         const code = v("code"), nm = v("nm");
-        if (code.replace(/\W/g, "").length < 8) return err("Enter the 8-character invite code.");
         if (nm.length < 2) return err("Your name needs at least 2 characters.");
         if (!/^\S+@\S+\.\S+$/.test(email)) return err("Enter a valid email.");
         if (pw.length < 8) return err("Use at least 8 characters for your password.");
         busy(true);
         S.pending = { code, nm };
         const { data, error } = await sb.auth.signUp({ email, password: pw });
-        if (error) { S.pending = null; throw new Error(/registered|exists/i.test(error.message) ? "That email already has an account. Sign in instead, then enter your code." : error.message); }
-        if (!data.session) { S.pending = null; busy(false); return err("Check your email to confirm, then sign in and enter your code.", true); }
+        if (error) { S.pending = null; throw new Error(/registered|exists/i.test(error.message) ? "That email already has an account. Sign in instead." : error.message); }
+        if (!data.session) { S.pending = null; busy(false); return err("Check your email to confirm, then sign in.", true); }
       }
       if (a === "redeem") {
         const code = v("code"), nm = v("nm");
-        if (code.replace(/\W/g, "").length < 8) return err("Enter the 8-character invite code.");
         if (nm.length < 2) return err("Your name needs at least 2 characters.");
         busy(true); await redeem(code, nm);
       }
@@ -289,10 +289,10 @@ function bindDoor() {
   });
 }
 async function redeem(code, nm) {
-  const r = await rpc("redeem_invite", { p_code: code, p_name: nm });
+  const r = await rpc("join_club", { p_name: nm, p_code: code || null });
   history.replaceState(null, "", location.pathname + "#/play");
   await loadAll();
-  toast(r.admin ? "Welcome. You're the club admin." : "Welcome to SUBAR100");
+  toast(r.admin ? "Welcome. You're the club admin." : "Welcome to SUBAR100. Good luck.");
 }
 const removedHTML = () => `<div class="door"><div class="door-in"><img class="patch" src="brand/patch.webp" alt="SUBAR100" width="330" height="113">
   <div class="panel"><p class="h3" style="margin:0 0 6px">Your membership is paused</p><p class="muted" style="margin:0 0 16px">The club admin has removed your access. Your history is kept. Ask the admin if you think this is a mistake.</p>
@@ -300,22 +300,39 @@ const removedHTML = () => `<div class="door"><div class="door-in"><img class="pa
 async function signOut() { await sb.auth.signOut(); S.st = null; S.uid = null; location.hash = ""; render(); }
 
 /* ---------- play (home) ---------- */
+const dayOf = c => c.day || c.start_day;
+function closest(c) {   // only for finished games
+  const g = (S.all || []).filter(x => x.comp_id === c.id);
+  if (!g.length || c.winning_number == null) return null;
+  const off = Math.min(...g.map(x => Math.abs(x.n - c.winning_number)));
+  return { off, who: [...new Set(g.filter(x => Math.abs(x.n - c.winning_number) === off).map(x => x.user_id))] };
+}
+const names = ids => ids.map(id => id === S.uid ? "You" : person(id).name).join(", ");
 function heroHTML() {
   const c = comp(), mine = S.st.mine;
-  const top = c ? `<div class="hero-top"><span class="eyebrow">Competition ${no(c.n)} · Day ${c.days}</span>${c.status === "open" ? `<span class="pill pill-ivory">Live</span>` : `<span class="pill pill-line">Closed</span>`}</div>` : `<div class="hero-top"><span class="eyebrow">Town House 10</span></div>`;
-  if (!c) return `<section class="card hero red stitch" aria-labelledby="ht">${top}<div class="die" aria-hidden="true">${dieSVG()}</div>
-    <div class="hero-body"><div><h1 class="hero-title" id="ht">The die is resting.</h1><p class="hero-sub">No competition is running yet. ${S.st.admin ? "Start the first one and the hidden number is rolled on the server." : "The admin starts the next one. You'll see it here."}</p></div>
-    ${S.st.admin ? `<a class="btn btn-ivory btn-big" href="#/admin">Start a competition ${ic.arrow}</a>` : ""}</div></section>`;
+  const top = `<div class="hero-top"><span class="eyebrow">Game ${no(c.n)} · ${fDay(c.day)}</span>${c.status === "open" ? `<span class="pill pill-ivory">Live</span>` : `<span class="pill pill-line">Won</span>`}</div>`;
   if (c.status === "won") return `<section class="card hero red stitch" aria-labelledby="ht">${top}
-    <div class="hero-body"><div><p class="eyebrow" style="color:var(--warm)">The number was</p><p class="disp" style="font-size:clamp(110px,30vw,170px);margin:6px 0 0;color:var(--warm)" id="ht">${c.number}</p></div>
-    <div style="display:flex;align-items:center;gap:12px">${av(c.winner, "lg")}<div><p class="h2" style="color:var(--warm)">${esc(person(c.winner).name)}</p><p class="hero-sub" style="margin:2px 0 0">Won on ${fDay(c.won_at)} after ${plural(c.days, "day")} and ${plural(c.guesses, "guess", "guesses")}.</p></div></div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn btn-ivory" href="#/comp/${c.n}">See the recap ${ic.arrow}</a>${S.st.admin ? `<a class="btn btn-quiet" style="color:var(--ivory)" href="#/admin">Start the next one</a>` : ""}</div></div></section>`;
+    <div class="hero-body"><div><p class="eyebrow" style="color:var(--warm)">Today's number was</p><p class="disp" style="font-size:clamp(110px,30vw,170px);margin:6px 0 0;color:var(--warm)" id="ht">${c.number}</p></div>
+    <div style="display:flex;align-items:center;gap:12px">${av(c.winner, "lg")}<div><p class="h2" style="color:var(--warm)">${esc(c.winner === S.uid ? "You found it" : person(c.winner).name)}</p><p class="hero-sub" style="margin:2px 0 0">Found at ${fTime(c.won_at)} with ${plural(c.guesses, "guess", "guesses")} in.</p></div></div>
+    <div class="locked-num" style="gap:12px;flex-wrap:wrap"><div><p class="eyebrow" style="color:var(--warm);margin:0 0 8px">New game in</p>${clockHTML(S.st.next)}</div></div>
+    <a class="btn btn-ivory" href="#/comp/${c.n}">See everyone's guesses ${ic.arrow}</a></div></section>`;
   if (mine) return `<section class="card hero red stitch" aria-labelledby="ht">${top}
-    <div class="hero-body"><div><h1 class="hero-title" id="ht">Locked in.</h1><p class="hero-sub">Not the number. It's still out there. Your next guess opens at midnight, Kuwait time.</p></div>
-    <div class="locked-num"><span class="tok" aria-label="Your guess today: ${mine.n}">${mine.n}</span><div><p class="eyebrow" style="color:var(--ivory);margin:0 0 8px">Next guess in</p>${clockHTML(S.st.next)}</div></div></div></section>`;
+    <div class="hero-body"><div><h1 class="hero-title" id="ht">Locked in.</h1><p class="hero-sub">Not the number, at least not yet. Today's number and everyone's guesses are revealed at midnight, Kuwait time.</p></div>
+    <div class="locked-num"><span class="tok" aria-label="Your guess today: ${mine.n}">${mine.n}</span><div><p class="eyebrow" style="color:var(--warm);margin:0 0 8px">Reveal in</p>${clockHTML(S.st.next)}</div></div></div></section>`;
   return `<section class="card hero red stitch" aria-labelledby="ht">${top}<div class="die" aria-hidden="true">${dieSVG()}</div>
-    <div class="hero-body"><div><h1 class="hero-title" id="ht">Today's guess is open.</h1><p class="hero-sub">One hidden number from 1 to 100. It stays the same until someone finds it.</p></div>
+    <div class="hero-body"><div><h1 class="hero-title" id="ht">Today's guess is open.</h1><p class="hero-sub">A new hidden number from 1 to 100 every day. First exact guess wins it.</p></div>
     <a class="btn btn-ivory btn-big" href="#/guess">Make your guess ${ic.arrow}</a></div></section>`;
+}
+function lastHTML() {
+  const l = S.st.last, c = comp();
+  if (!l || l.id === c.id) return "";
+  const row = S.comps.find(x => x.id === l.id) || l, cl = l.status === "won" ? null : closest(row);
+  return `<a class="card last" href="#/comp/${l.n}">
+    <span class="tok ${l.status === "won" ? "solid" : ""}" style="--s:64px">${l.number}</span>
+    <div class="grow"><p class="eyebrow">${l.day === S.st.today ? "Earlier today" : fDay(l.day)} · Game ${no(l.n)}</p>
+      <p class="h3" style="margin-top:4px">${l.status === "won" ? `${esc(l.winner === S.uid ? "You" : person(l.winner).name)} found it` : "No winner"}</p>
+      <p class="s quiet" style="margin:2px 0 0;font-size:13.5px">${plural(l.guesses, "guess", "guesses")}${cl ? ` · Closest: ${esc(names(cl.who))}, ${cl.off} away` : ""}</p></div>
+    ${ic.arrow.replace('class="arr"', 'width="20" height="20" style="color:var(--ink-3);flex:none"')}</a>`;
 }
 function playView() {
   const c = comp(), st = S.st, mineB = S.board.find(b => b.id === S.uid) || {};
@@ -327,28 +344,29 @@ function playView() {
       ${tile(ic.users, "Players", st.players)}
       ${tile(ic.check, "In today", inToday.size, `/ ${st.players}`)}
       ${tile(ic.flame, "Your streak", mineB.streak || 0, (mineB.streak || 0) === 1 ? "day" : "days")}
-      ${tile(ic.cal, "Days running", c && c.status === "open" ? c.days : "–")}
+      ${tile(ic.cal, "Games played", st.games)}
     </div></div>
     <div class="col">
-    ${c?.prize || c?.note ? `<div class="note">${ic.pennant}<div>${c.prize ? `<b>The prize</b>${esc(c.prize)}` : ""}${c.note ? `<p style="margin:${c.prize ? "6px" : 0} 0 0;color:var(--ink)">${esc(c.note)}</p>` : ""}</div></div>` : ""}
-    <section class="card" aria-labelledby="wh"><div class="card-h"><h2 class="h3" id="wh">Who's in today</h2>${c?.status === "open" ? `<span class="live">Live</span>` : ""}</div>
+    ${lastHTML()}
+    ${st.prize || st.note ? `<div class="note">${ic.pennant}<div>${st.prize ? `<b>The prize</b>${esc(st.prize)}` : ""}${st.note ? `<p style="margin:${st.prize ? "6px" : 0} 0 0;color:var(--ink)">${esc(st.note)}</p>` : ""}</div></div>` : ""}
+    <section class="card" aria-labelledby="wh"><div class="card-h"><h2 class="h3" id="wh">Who's in today</h2>${c.status === "open" ? `<span class="live">Live</span>` : ""}</div>
       <div class="bar" style="margin-bottom:16px" aria-hidden="true"><i style="width:${st.players ? (inToday.size / st.players * 100) : 0}%"></i></div>
       ${crew.length ? `<div class="crew">${crew.map(p => `<div class="mate ${inToday.has(p.id) ? "in" : "out"}"><span class="chk">${av(p.id)}</span><span>${esc(p.id === S.uid ? "You" : p.name.split(" ")[0])}</span><span class="sr">${inToday.has(p.id) ? "has guessed today" : "not in yet"}</span></div>`).join("")}</div>` : ""}
-      <p class="quiet" style="font-size:13px;margin:14px 0 0">Numbers stay private until someone wins.</p></section>
+      <p class="quiet" style="font-size:13px;margin:14px 0 0">Guesses stay private until the game ends.</p></section>
     <section class="card" aria-labelledby="hw"><h2 class="h3" id="hw" style="margin-bottom:14px">How it works</h2><ol class="howto">
-      <li>The server rolls one hidden number from 1 to 100.</li><li>You get one guess a day. It resets at midnight, Kuwait time.</li>
-      <li>The number never changes until someone guesses it exactly.</li><li>First exact guess wins. No hints, no higher or lower.</li></ol></section>
+      <li>Every day the server rolls a new hidden number from 1 to 100.</li><li>You get one guess a day. No hints, no higher or lower.</li>
+      <li>The first exact guess wins and ends that day's game.</li><li>At midnight, Kuwait time, the number and everyone's guesses are revealed, and a new game starts.</li></ol></section>
     </div></div>`;
 }
 
 /* ---------- guess ---------- */
 function guessView() {
   const c = comp(), st = S.st;
-  if (!c || c.status !== "open") return `<div class="view"><section class="card empty">${ic.lock}<p class="h3">No competition is open</p><p>${c ? "This one has a winner." : "The admin will start one soon."}</p><a class="btn btn-ghost" href="#/play">Back to today</a></section></div>`;
   if (st.mine) return lockedHTML(st.mine.n, false);
+  if (c.status !== "open") return `<div class="view"><section class="card empty">${ic.lock}<p class="h3">Today's number has been found</p><p>${esc(c.winner === S.uid ? "By you" : `By ${person(c.winner).name}`)}. A new game starts at midnight, Kuwait time.</p><a class="btn btn-ghost" href="#/comp/${c.n}">See everyone's guesses</a></section></div>`;
   return `<div class="view guess-wrap">
     <section class="card pick" aria-labelledby="gh">
-      <header class="pick-head"><p class="eyebrow">Competition ${no(c.n)} · ${fDay(st.today)}</p><h1 class="h2" id="gh">Choose your number</h1></header>
+      <header class="pick-head"><p class="eyebrow">Game ${no(c.n)} · ${fDay(st.today)}</p><h1 class="h2" id="gh">Choose your number</h1></header>
       <div class="stage"><canvas id="die3d" aria-hidden="true"></canvas><div class="die-flat" id="dieFlat" hidden aria-hidden="true">${dieSVG(String(S.val))}</div>
         <button class="roll" id="rnd">${ic.dice.replace('aria-hidden="true"', 'aria-hidden="true" width="16" height="16"')} Roll it</button>
         <p class="drag-hint" aria-hidden="true">Drag the die to spin it</p></div>
@@ -418,7 +436,7 @@ function confirmSheet() {
     if (r.status === "won") { S.wonNow = true; history.replaceState(null, "", "#/play"); await loadAll(); return; }
     if (r.status === "locked") { await loadAll(); $("#main").innerHTML = lockedHTML(r.n, true); return; }
     if (r.status === "already") { toast(r.n ? `You already guessed ${r.n} today.` : "You already guessed today."); await loadAll(); return go("play"); }
-    if (r.status === "closed") { toast("This competition just ended."); await loadAll(); return go("play"); }
+    if (r.status === "closed") { toast("Today's game just ended."); await loadAll(); return go("play"); }
     if (r.status === "slow") { toast("One moment, then try again."); }
   };
 }
@@ -427,61 +445,72 @@ function lockedHTML(n, fresh) {
     <p class="eyebrow">${fresh ? "Saved on the server" : "Today's guess"}</p>
     <span class="tok solid ${fresh ? "stamp" : ""}" style="--s:150px" aria-hidden="true">${n}</span>
     <h1 class="h2" id="lh">${fresh ? `Locked in. ${n} it is.` : `You picked ${n} today.`}</h1>
-    <p class="muted" style="margin:0;max-width:34ch">Not the number. It's still out there. Come back after midnight, Kuwait time, for your next guess.</p>
+    <p class="muted" style="margin:0;max-width:34ch">Not the number, at least not yet. Today's number and everyone's guesses are revealed at midnight, Kuwait time. Then a new game starts.</p>
     ${clockHTML(S.st.next, "ink")}
     <a class="btn btn-ghost" href="#/play">Back to today</a></section></div>`;
 }
 
 /* ---------- board ---------- */
 function boardView() {
-  const t = S.tab.board, inToday = new Set(S.st.in_today || []);
+  const inToday = new Set(S.st.in_today || []);
   const ranked = [...S.board].sort((a, b) => b.wins - a.wins || b.guesses - a.guesses || b.streak - a.streak || a.name.localeCompare(b.name));
-  const won = S.comps.filter(c => c.status === "won");
-  const friends = ranked.length ? `<div class="rows">${ranked.map((p, i) => `<div class="row"><span class="rank ${i === 0 && p.wins ? "top" : ""}">${i + 1}</span>${av(p.id)}
-      <div class="grow"><div class="t">${esc(p.name)}${p.id === S.uid ? ' <span class="quiet" style="font-weight:500">(you)</span>' : ""}</div><div class="s">${plural(p.guesses, "guess", "guesses")}${comp()?.status === "open" ? ` · ${inToday.has(p.id) ? "In today" : "Not in yet"}` : ""}</div></div>
-      <div class="metrics"><div class="metric"><b>${p.wins}</b><i>Wins</i></div><div class="metric"><b>${p.streak}</b><i>Streak</i></div></div></div>`).join("")}</div>`
-    : `<div class="empty">${ic.users}<p>No members yet.</p></div>`;
-  const winners = won.length ? `<div class="rows">${won.map(c => `<a class="row" href="#/comp/${c.n}" style="text-decoration:none;color:inherit">
-      <span class="tok" style="--s:48px">${c.winning_number}</span><div class="grow"><div class="t">${esc(person(c.winner).name)}</div>
-      <div class="s">Competition ${no(c.n)} · ${fDay(c.won_at)} · ${plural(dayCount(c), "day")}</div></div>${ic.arrow.replace('class="arr"', 'width="20" height="20" style="color:var(--ink-3)"')}</a>`).join("")}</div>`
-    : `<div class="empty">${ic.pennant}<p class="h3">No winners yet</p><p>The first exact guess takes the pennant.</p></div>`;
   return `<div class="view"><div><p class="eyebrow">The club</p><h1 class="h1" style="margin-top:6px">Leaderboard</h1></div>
-    <section class="card"><div class="tabs" role="tablist"><button role="tab" aria-selected="${t === "friends"}" data-t="friends">Friends</button><button role="tab" aria-selected="${t === "winners"}" data-t="winners">Winners</button></div>
-    ${t === "friends" ? friends : winners}
-    ${t === "friends" ? `<p class="quiet" style="font-size:13px;margin:14px 0 0">Ranked by competitions won, then guesses made. Nobody is ranked by how close they are.</p>` : ""}</section></div>`;
+    <section class="card">${ranked.length ? `<div class="rows">${ranked.map((p, i) => `<div class="row"><span class="rank ${i === 0 && p.wins ? "top" : ""}">${i + 1}</span>${av(p.id)}
+      <div class="grow"><div class="t">${esc(p.name)}${p.id === S.uid ? ' <span class="quiet" style="font-weight:500">(you)</span>' : ""}</div><div class="s">${plural(p.guesses, "guess", "guesses")}${comp().status === "open" ? ` · ${inToday.has(p.id) ? "In today" : "Not in yet"}` : ""}</div></div>
+      <div class="metrics"><div class="metric"><b>${p.wins}</b><i>Wins</i></div><div class="metric"><b>${p.streak}</b><i>Streak</i></div></div></div>`).join("")}</div>`
+    : `<div class="empty">${ic.users}<p>No members yet.</p></div>`}
+    <p class="quiet" style="font-size:13px;margin:14px 0 0">Ranked by wins, then guesses made. A streak is days in a row with a guess.</p></section></div>`;
 }
-bind.board = () => $$("[data-t]").forEach(b => b.onclick = () => { S.tab.board = b.dataset.t; transition(render); });
-const dayCount = c => Math.round((Date.parse((c.won_at ? fmt(c.won_at, { year: "numeric", month: "2-digit", day: "2-digit" }).split("/").reverse().join("-") : S.st.today) + "T00:00:00Z") - Date.parse(c.start_day + "T00:00:00Z")) / 864e5) + 1;
 
-/* ---------- competition recap ---------- */
+/* ---------- winners: every finished game ---------- */
+function winnersView() {
+  const done = S.comps.filter(c => c.status !== "open");
+  const won = done.filter(c => c.status === "won");
+  if (!done.length) return `<div class="view"><div><p class="eyebrow">Past games</p><h1 class="h1" style="margin-top:6px">Winners</h1></div>
+    <section class="card empty">${ic.pennant}<p class="h3">No finished games yet</p><p>Today's game ends at midnight, Kuwait time, or as soon as someone finds the number. It will show up here with everyone's guesses.</p></section></div>`;
+  const tile = (k, v) => `<div class="stat"><span class="k">${k}</span><span class="v num">${v}</span></div>`;
+  return `<div class="view"><div><p class="eyebrow">Past games</p><h1 class="h1" style="margin-top:6px">Winners</h1></div>
+    <div class="stats">${tile("Games", done.length)}${tile("Won", won.length)}${tile("No winner", done.length - won.length)}${tile("Guesses", (S.all || []).filter(g => done.some(c => c.id === g.comp_id)).length)}</div>
+    <section class="card"><h2 class="h3" style="margin-bottom:12px">Past numbers</h2>
+      <div class="strip">${done.slice(0, 30).map(c => `<a href="#/comp/${c.n}" class="tok ${c.status === "won" ? "solid" : ""}" style="--s:46px" aria-label="Game ${c.n}: ${c.winning_number}${c.status === "won" ? ", won" : ""}">${c.winning_number}</a>`).join("")}</div>
+      <p class="quiet" style="font-size:13px;margin:12px 0 0">Filled red means someone found it.</p></section>
+    <section class="card"><div class="rows">${done.map(c => {
+      const cl = c.status === "won" ? null : closest(c), n = (S.all || []).filter(g => g.comp_id === c.id).length;
+      return `<a class="row" href="#/comp/${c.n}" style="text-decoration:none;color:inherit">
+        <span class="tok ${c.status === "won" ? "solid" : ""}" style="--s:48px">${c.winning_number}</span>
+        <div class="grow"><div class="t">${c.status === "won" ? `${av(c.winner, "sm")} ${esc(c.winner === S.uid ? "You" : person(c.winner).name)}` : "No winner"}</div>
+        <div class="s">Game ${no(c.n)} · ${fDay(dayOf(c))} · ${plural(n, "guess", "guesses")}${cl ? ` · Closest ${esc(names(cl.who))} (${cl.off} away)` : ""}</div></div>
+        ${ic.arrow.replace('class="arr"', 'width="20" height="20" style="color:var(--ink-3);flex:none"')}</a>`; }).join("")}</div></section></div>`;
+}
+
+/* ---------- game recap ---------- */
 function compView(n) {
   const c = S.comps.find(x => x.n === n);
-  if (!c) return `<div class="view"><section class="card empty">${ic.info}<p class="h3">Competition not found</p><a class="btn btn-ghost" href="#/board">Back to the board</a></section></div>`;
-  if (c.status !== "won") return `<div class="view"><section class="card empty">${ic.lock}<p class="h3">Competition ${no(c.n)} is still live</p><p>Guesses are revealed once someone wins.</p><a class="btn btn-ghost" href="#/play">Back to today</a></section></div>`;
-  const all = S.recap?.[n];
-  const rows = all ? all.map(g => `<tr ${g.is_win ? 'style="background:var(--tint)"' : ""}><td>${fDay(g.day)}</td><td><span style="display:flex;align-items:center;gap:10px">${av(g.user_id, "sm")}${esc(person(g.user_id).name)}</span></td>
-      <td class="r"><span class="disp" style="font-size:20px;${g.is_win ? "color:var(--brand)" : ""}">${g.n}</span></td><td class="r quiet">${fTime(g.at)}</td></tr>`).join("") : "";
-  return `<div class="view"><a class="btn btn-quiet" href="#/board" style="justify-self:start;padding-left:4px">${ic.back} Board</a>
-    <section class="card hero red stitch" style="min-height:0"><div class="hero-top"><span class="eyebrow">Competition ${no(c.n)} · Recap</span><span class="pill pill-line">${fDay(c.won_at)}</span></div>
+  const back = `<a class="btn btn-quiet" href="#/winners" style="justify-self:start;padding-left:4px">${ic.back} Winners</a>`;
+  if (!c) return `<div class="view">${back}<section class="card empty">${ic.info}<p class="h3">Game not found</p></section></div>`;
+  if (c.status === "open") return `<div class="view">${back}<section class="card empty">${ic.lock}<p class="h3">Game ${no(c.n)} is still live</p><p>Everyone's guesses are revealed at midnight, or as soon as someone finds the number.</p></section></div>`;
+  const all = (S.all || []).filter(g => g.comp_id === c.id).map(g => ({ ...g, off: Math.abs(g.n - c.winning_number) })).sort((a, b) => a.off - b.off || Date.parse(a.at) - Date.parse(b.at));
+  const cl = c.status === "won" ? null : closest(c), won = c.status === "won";
+  const rows = all.map((g, i) => `<tr ${g.is_win ? 'class="hit"' : ""}><td class="rank-c">${i + 1}</td><td><span style="display:flex;align-items:center;gap:10px">${av(g.user_id, "sm")}${esc(person(g.user_id).name)}</span></td>
+      <td class="r"><span class="disp" style="font-size:20px;${g.is_win ? "color:var(--brand)" : ""}">${g.n}</span></td><td class="r">${g.off === 0 ? "Exact" : g.off}</td><td class="r quiet">${fTime(g.at)}</td></tr>`).join("");
+  return `<div class="view">${back}
+    <section class="card hero red stitch" style="min-height:0"><div class="hero-top"><span class="eyebrow">Game ${no(c.n)} · ${fDay(dayOf(c))}</span><span class="pill pill-line">${won ? "Won" : "No winner"}</span></div>
       <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;position:relative;z-index:1"><span class="tok" style="--s:120px">${c.winning_number}</span>
-      <div><p class="eyebrow" style="color:var(--warm)">Winner</p><p class="h1" style="color:var(--warm);margin-top:4px">${esc(person(c.winner).name)}</p>
-      <p class="hero-sub" style="margin-top:6px">Found it on day ${dayCount(c)}${c.prize ? `. Prize: ${esc(c.prize)}` : ""}.</p></div></div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;position:relative;z-index:1"><button class="btn btn-ivory" id="card">${ic.share} Victory card</button><button class="btn btn-quiet" style="color:var(--ivory)" id="cert">${ic.doc} Certificate</button></div></section>
-    <section class="card"><div class="card-h"><h2 class="h3">Every guess</h2><span class="quiet num" style="font-size:13px">${all ? plural(all.length, "guess", "guesses") : ""}</span></div>
-      ${all ? `<div class="scroll-x"><table class="table"><thead><tr><th>Day</th><th>Member</th><th class="r">Guess</th><th class="r">Time</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="sk" style="height:180px"></div>`}</section></div>`;
+      <div>${won ? `<p class="eyebrow" style="color:var(--warm)">Winner</p><p class="h1" style="color:var(--warm);margin-top:4px">${esc(person(c.winner).name)}</p>
+        <p class="hero-sub" style="margin-top:6px">Found it at ${fTime(c.won_at)}, Kuwait time.</p>`
+      : `<p class="eyebrow" style="color:var(--warm)">The number was ${c.winning_number}</p><p class="h1" style="color:var(--warm);margin-top:4px">No winner</p>
+        <p class="hero-sub" style="margin-top:6px">${cl ? `Closest: ${esc(names(cl.who))}, ${cl.off} away.` : "Nobody guessed that day."}</p>`}</div></div>
+      ${won ? `<div style="display:flex;gap:10px;flex-wrap:wrap;position:relative;z-index:1"><button class="btn btn-ivory" id="card">${ic.share} Victory card</button><button class="btn btn-quiet" style="color:var(--ivory)" id="cert">${ic.doc} Certificate</button></div>` : ""}</section>
+    <section class="card"><div class="card-h"><h2 class="h3">Everyone's guesses</h2><span class="quiet num" style="font-size:13px">${plural(all.length, "guess", "guesses")}</span></div>
+      ${all.length ? `<div class="scroll-x"><table class="table"><thead><tr><th>#</th><th>Member</th><th class="r">Guess</th><th class="r">Off by</th><th class="r">Time</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<p class="quiet" style="margin:0">Nobody guessed in this game.</p>`}</section></div>`;
 }
-bind.comp = async n => {
-  n = +n; const c = S.comps.find(x => x.n === n);
+bind.comp = n => {
+  const c = S.comps.find(x => x.n === +n);
   if (!c || c.status !== "won") return;
-  $("#card").onclick = () => shareImage(victoryCard(c), `subar100-winner-${c.n}.png`);
-  $("#cert").onclick = () => shareImage(certificate(c), `subar100-certificate-${c.n}.png`);
-  if (!S.recap?.[n]) {
-    try {
-      const all = await sel(sb.from("guesses").select("user_id,day,n,at,is_win").eq("comp_id", c.id).order("at", { ascending: false }));
-      S.recap = { ...S.recap, [n]: all };
-      if (route()[0] === "comp" && +route()[1] === n) render();
-    } catch (e) { toast(errText(e), true); }
-  }
+  const full = { ...c, guesses: (S.all || []).filter(g => g.comp_id === c.id).length };
+  $("#card").onclick = () => shareImage(victoryCard(full), `subar100-winner-${c.n}.png`);
+  $("#cert").onclick = () => shareImage(certificate(full), `subar100-certificate-${c.n}.png`);
 };
 
 /* ---------- you ---------- */
@@ -499,13 +528,13 @@ function youView() {
       <div class="grow" style="min-width:0"><p class="eyebrow">Member since ${fDate(m.joined_at || S.board.find(x => x.id === S.uid)?.joined_at || Date.now())}</p>
       <form id="nameF" style="display:flex;gap:8px;margin-top:8px"><label class="sr" for="nmE">Display name</label><input class="inp" id="nmE" value="${esc(m.name)}" maxlength="24" style="min-height:44px"><button class="btn btn-ghost" style="min-height:44px;padding:0 16px">Save</button></form></div></div></section>
     <div class="stats">${tile("Guesses", b.guesses)}${tile("Streak", b.streak)}${tile("Best streak", best)}${tile("Wins", b.wins)}</div>
-    <section class="card"><h2 class="h3" style="margin-bottom:10px">Account</h2><dl class="kv"><dt>Email</dt><dd style="word-break:break-all">${esc(S.email)}</dd><dt>Competitions entered</dt><dd>${b.entered}</dd></dl>
+    <section class="card"><h2 class="h3" style="margin-bottom:10px">Account</h2><dl class="kv"><dt>Email</dt><dd style="word-break:break-all">${esc(S.email)}</dd><dt>Games played</dt><dd>${b.entered}</dd></dl>
       <hr class="hr" style="margin:16px 0"><form id="pwF" class="fields"><div class="field"><label for="pwN">New password</label><input class="inp" id="pwN" type="password" autocomplete="new-password" minlength="8"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-ghost">Change password</button><button type="button" class="btn btn-quiet" id="out">Sign out</button></div></form></section></div>
     <section class="card"><h2 class="h3" style="margin-bottom:6px">Your guesses</h2>
-      ${byComp.length ? byComp.map(({ c, g }) => `<div style="margin-top:14px"><div class="card-h" style="margin-bottom:4px"><span class="eyebrow">Competition ${no(c.n)}</span>
-        ${c.status === "won" ? `<span class="pill ${c.winner === S.uid ? "pill-red" : "pill-ink"}">${c.winner === S.uid ? "You won" : `Number was ${c.winning_number}`}</span>` : `<span class="pill pill-red">${ic.lock.replace("<svg", '<svg width="12" height="12"')} Live</span>`}</div>
-        <div class="rows">${g.map(x => `<div class="row"><span class="tok ${x.is_win ? "solid" : ""}" style="--s:40px">${x.n}</span><div class="grow"><div class="t">${fDay(x.day)}</div><div class="s">${x.is_win ? "Winning guess" : `Locked at ${fTime(x.at)}`}</div></div></div>`).join("")}</div></div>`).join("")
+      ${byComp.length ? byComp.map(({ c, g }) => `<div style="margin-top:14px"><div class="card-h" style="margin-bottom:4px"><a class="eyebrow" href="#/comp/${c.n}" style="text-decoration:none">Game ${no(c.n)}</a>
+        ${c.status !== "open" ? `<span class="pill ${c.winner === S.uid ? "pill-red" : "pill-ink"}">${c.winner === S.uid ? "You won" : `Number was ${c.winning_number}`}</span>` : `<span class="pill pill-red">${ic.lock.replace("<svg", '<svg width="12" height="12"')} Live</span>`}</div>
+        <div class="rows">${g.map(x => `<div class="row"><span class="tok ${x.is_win ? "solid" : ""}" style="--s:40px">${x.n}</span><div class="grow"><div class="t">${fDay(x.day)}</div><div class="s">${x.is_win ? "Winning guess" : c.status !== "open" ? `${Math.abs(x.n - c.winning_number)} away` : `Locked at ${fTime(x.at)}`}</div></div></div>`).join("")}</div></div>`).join("")
       : `<div class="empty">${ic.dice}<p class="h3">No guesses yet</p><p>Your daily guesses will collect here.</p>${comp()?.status === "open" && !S.st.mine ? `<a class="btn btn-primary" href="#/guess">Make your first guess</a>` : ""}</div>`}</section></div>`;
 }
 bind.you = () => {
@@ -537,65 +566,44 @@ bind.you = () => {
 
 /* ---------- admin ---------- */
 function adminView() {
-  const c = comp(), A = S.adm;
-  const open = c?.status === "open";
-  const inv = A ? A.invites.filter(i => !i.used_by && !i.revoked_at) : [];
-  const actLabel = { joined: "joined", guessed: "guessed", won: "won", started: "started a competition", edited: "edited prize or note", invited: "created an invite", invite_revoked: "cancelled an invite", removed: "removed a member", restored: "restored a member" };
+  const c = comp(), A = S.adm, st = S.st;
+  const actLabel = { joined: "joined", made_admin: "became admin", guessed: "guessed", won: "won", opened: "Game opened", edited: "edited the prize or note", removed: "removed a member", restored: "restored a member" };
   return `<div class="view"><div><p class="eyebrow">Club admin</p><h1 class="h1" style="margin-top:6px">Admin</h1></div>
   <div class="grid2"><div style="display:grid;gap:16px">
-    <section class="card"><div class="card-h"><h2 class="h3">Competition</h2>${c ? `<span class="pill ${open ? "pill-red" : "pill-ink"}">${open ? `${no(c.n)} live` : `${no(c.n)} closed`}</span>` : ""}</div>
-      ${open ? `<dl class="kv"><dt>Started</dt><dd>${fDate(c.started_at)}</dd><dt>Days running</dt><dd>${c.days}</dd><dt>Guesses so far</dt><dd>${c.guesses}</dd><dt>Members entered</dt><dd>${c.entrants} of ${S.st.players}</dd><dt>Hidden number</dt><dd>${ic.lock.replace("<svg", '<svg width="14" height="14" style="vertical-align:-2px"')} Sealed</dd></dl>
-        <hr class="hr" style="margin:16px 0"><form id="infoF" class="fields"><div class="field"><label for="pz">Prize (optional)</label><input class="inp" id="pz" maxlength="80" value="${esc(c.prize || "")}"></div>
-        <div class="field"><label for="nt">Announcement (optional)</label><textarea class="inp" id="nt" maxlength="280">${esc(c.note || "")}</textarea></div><button class="btn btn-ghost">Save prize and note</button></form>`
-      : `<p class="muted" style="margin-top:0">${c ? `${no(c.n)} was won by ${esc(person(c.winner).name)}. ` : ""}Start a new competition and the server rolls a fresh hidden number. Nobody can see it, including you.</p>
-        <form id="startF" class="fields"><div class="field"><label for="pz">Prize (optional)</label><input class="inp" id="pz" maxlength="80" placeholder="For example Dinner at Freej Swaileh"></div>
-        <div class="field"><label for="nt">Announcement (optional)</label><textarea class="inp" id="nt" maxlength="280" placeholder="A note everyone sees on the home screen"></textarea></div>
-        <button class="btn btn-primary btn-block">Start competition ${no((S.comps[0]?.n || 0) + 1)}</button></form>`}</section>
-    <section class="card"><div class="card-h"><h2 class="h3">Invites</h2></div><p class="muted" style="margin-top:0">Each code works once. Share the link and your friend joins straight in.</p>
-      <form id="invF" style="display:flex;gap:8px"><label class="sr" for="invN">Who is it for</label><input class="inp" id="invN" maxlength="40" placeholder="Who is it for? (optional)" style="min-height:48px"><button class="btn btn-primary" style="min-height:48px;padding:0 18px">Create</button></form>
-      <div id="newInv"></div>
-      ${A ? (inv.length ? `<div class="rows" style="margin-top:10px">${inv.map(i => `<div class="row"><div class="grow"><div class="code">${esc(i.code)}</div><div class="s">${esc(i.note || "No name")} · ${fDay(i.created_at)}</div></div>
-          <button class="btn btn-quiet" data-copy="${esc(i.code)}" aria-label="Copy invite link for ${esc(i.note || i.code)}">${ic.copy}</button><button class="btn btn-quiet" data-revoke="${esc(i.code)}">Cancel</button></div>`).join("")}</div>` : `<p class="quiet" style="font-size:13.5px;margin:14px 0 0">No open invites.</p>`) : `<div class="sk" style="height:60px;margin-top:12px"></div>`}</section>
-  </div><div style="display:grid;gap:16px">
+    <section class="card"><div class="card-h"><h2 class="h3">Today's game</h2><span class="pill ${c.status === "open" ? "pill-red" : "pill-ink"}">${no(c.n)} ${c.status === "open" ? "live" : "won"}</span></div>
+      <dl class="kv"><dt>Date</dt><dd>${fDate(c.day + "T12:00:00+03:00")}</dd><dt>Guesses so far</dt><dd>${c.guesses}</dd><dt>Members in</dt><dd>${(st.in_today || []).length} of ${st.players}</dd>
+      <dt>Hidden number</dt><dd>${c.status === "open" ? `${ic.lock.replace("<svg", '<svg width="14" height="14" style="vertical-align:-2px"')} Sealed` : c.number}</dd><dt>Next game</dt><dd>Midnight, Kuwait time</dd></dl>
+      <p class="quiet" style="font-size:13px;margin:14px 0 0">A new game opens by itself every day. Nobody can see the number, including you.</p></section>
+    <section class="card"><h2 class="h3" style="margin-bottom:12px">Prize and announcement</h2>
+      <form id="clubF" class="fields"><div class="field"><label for="pz">Prize (optional)</label><input class="inp" id="pz" maxlength="80" value="${esc(st.prize || "")}" placeholder="For example Dinner at Freej Swaileh"></div>
+      <div class="field"><label for="nt">Announcement (optional)</label><textarea class="inp" id="nt" maxlength="280" placeholder="A note everyone sees on the home screen">${esc(st.note || "")}</textarea></div><button class="btn btn-ghost">Save</button></form></section>
     <section class="card"><div class="card-h"><h2 class="h3">Members</h2><span class="quiet" style="font-size:13px">${A ? A.members.filter(m => !m.removed_at).length : ""} active</span></div>
+      <p class="muted" style="margin-top:0;font-size:14px">Anyone with the link can create an account and play. Remove someone to lock them out; their history stays.</p>
       ${A ? `<div class="rows">${A.members.map(m => `<div class="row">${av(m.id, "sm")}<div class="grow"><div class="t">${esc(m.name)}${m.is_admin ? ' <span class="pill pill-red" style="min-height:20px;font-size:9.5px">Admin</span>' : ""}</div><div class="s" style="word-break:break-all">${esc(m.email)}${m.removed_at ? " · Removed" : ""}</div></div>
         ${m.id === S.uid ? "" : `<button class="btn btn-quiet" data-member="${m.id}" data-on="${m.removed_at ? 1 : 0}">${m.removed_at ? "Restore" : "Remove"}</button>`}</div>`).join("")}</div>` : `<div class="sk" style="height:120px"></div>`}</section>
-    <section class="card"><div class="card-h"><h2 class="h3">Submissions</h2><span class="quiet" style="font-size:12.5px">Numbers show once a competition is won</span></div>
-      ${A ? (A.guesses.length ? `<div class="scroll-x"><table class="table"><thead><tr><th>When (Kuwait)</th><th>Member</th><th class="r">No.</th><th class="r">Guess</th></tr></thead><tbody>
+  </div><div style="display:grid;gap:16px">
+    <section class="card"><div class="card-h"><h2 class="h3">Submissions</h2><span class="quiet" style="font-size:12.5px">Numbers show once a game ends</span></div>
+      ${A ? (A.guesses.length ? `<div class="scroll-x"><table class="table"><thead><tr><th>When (Kuwait)</th><th>Member</th><th class="r">Game</th><th class="r">Guess</th></tr></thead><tbody>
         ${A.guesses.slice(0, 60).map(g => `<tr><td class="num">${fDay(g.at)}, ${fmt(g.at, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td><td>${esc(g.name)}</td><td class="r">${pad(g.comp)}</td><td class="r">${g.n == null ? ic.lock.replace("<svg", '<svg width="14" height="14" style="color:var(--ink-3)" aria-label="Sealed"') : `<b${g.is_win ? ' style="color:var(--brand)"' : ""}>${g.n}</b>`}</td></tr>`).join("")}</tbody></table></div>` : `<p class="quiet" style="margin:0">No guesses yet.</p>`) : `<div class="sk" style="height:120px"></div>`}</section>
     <section class="card"><h2 class="h3" style="margin-bottom:8px">Activity log</h2>
-      ${A ? `<div class="rows">${A.audit.slice(0, 40).map(a => `<div class="row" style="padding:9px 0"><div class="grow"><div class="t" style="font-weight:500;font-size:14px">${esc(a.actor ? person(a.actor).name : "System")} ${esc(actLabel[a.action] || a.action)}${a.detail?.comp ? ` · ${no(a.detail.comp)}` : ""}</div></div><span class="s num">${fDay(a.at)} ${fTime(a.at)}</span></div>`).join("")}</div>` : `<div class="sk" style="height:120px"></div>`}</section>
+      ${A ? `<div class="rows">${A.audit.slice(0, 40).map(a => `<div class="row" style="padding:9px 0"><div class="grow"><div class="t" style="font-weight:500;font-size:14px">${a.actor ? esc(person(a.actor).name) + " " : ""}${esc(actLabel[a.action] || a.action)}${a.detail?.comp ? ` · ${no(a.detail.comp)}` : ""}</div></div><span class="s num">${fDay(a.at)} ${fTime(a.at)}</span></div>`).join("")}</div>` : `<div class="sk" style="height:120px"></div>`}</section>
   </div></div></div>`;
 }
 async function loadAdmin() {
   try {
-    const [members, invites, guesses, audit] = await Promise.all([rpc("admin_members"),
-      sel(sb.from("invites").select("*").order("created_at", { ascending: false })), rpc("admin_guesses", { p_limit: 200 }),
+    const [members, guesses, audit] = await Promise.all([rpc("admin_members"), rpc("admin_guesses", { p_limit: 200 }),
       sel(sb.from("audit").select("*").order("at", { ascending: false }).limit(100))]);
-    S.adm = { members, invites, guesses, audit };
-    if (route()[0] === "admin") { render(); }
+    S.adm = { members, guesses, audit };
+    if (route()[0] === "admin") render();
   } catch (e) { toast(errText(e), true); }
-}
-const inviteLink = code => `${location.origin}${location.pathname}?invite=${code}`;
-async function shareInvite(code, note) {
-  const url = inviteLink(code), text = `You're invited to SUBAR100${note ? `, ${note}` : ""}. One guess a day, one hidden number. Join with code ${code}: ${url}`;
-  if (navigator.share) { try { await navigator.share({ title: "SUBAR100 invite", text }); return; } catch (e) { if (e.name === "AbortError") return; } }
-  try { await navigator.clipboard.writeText(text); toast("Invite link copied"); } catch { toast(`Code ${code}`); }
 }
 bind.admin = () => {
   if (!S.adm) loadAdmin();
-  const f = (id, fn) => { const el = $("#" + id); if (el) el.onsubmit = async e => { e.preventDefault(); const b = $("button", el); b.disabled = true; try { await fn(); } catch (x) { toast(errText(x), true); } b.disabled = false; }; };
-  f("startF", async () => { const r = await rpc("start_competition", { p_prize: $("#pz").value, p_note: $("#nt").value }); toast(`Competition ${no(r.n)} is live`); S.adm = null; await loadAll(); });
-  f("infoF", async () => { await rpc("set_comp_info", { p_id: comp().id, p_prize: $("#pz").value, p_note: $("#nt").value }); toast("Saved"); loadAll(); });
-  f("invF", async () => {
-    const note = $("#invN").value.trim(), code = await rpc("create_invite", { p_note: note });
-    $("#invN").value = "";
-    $("#newInv").innerHTML = `<div class="note" style="margin-top:12px;align-items:center">${ic.check}<div class="grow"><b>New invite${note ? ` for ${esc(note)}` : ""}</b><span class="code" style="color:var(--ink)">${esc(code)}</span></div><button class="btn btn-primary" style="min-height:42px" id="shareNew">${ic.share} Share</button></div>`;
-    $("#shareNew").onclick = () => shareInvite(code, note);
-    const keep = $("#newInv").innerHTML; await loadAdmin(); const n = $("#newInv"); if (n) { n.innerHTML = keep; $("#shareNew").onclick = () => shareInvite(code, note); }
-  });
-  $$("[data-copy]").forEach(b => b.onclick = () => shareInvite(b.dataset.copy, S.adm.invites.find(i => i.code === b.dataset.copy)?.note));
-  $$("[data-revoke]").forEach(b => b.onclick = async () => { try { await rpc("revoke_invite", { p_code: b.dataset.revoke }); toast("Invite cancelled"); loadAdmin(); } catch (x) { toast(errText(x), true); } });
+  $("#clubF").onsubmit = async e => {
+    e.preventDefault(); const b = $("button", e.target); b.disabled = true;
+    try { await rpc("set_club", { p_prize: $("#pz").value, p_note: $("#nt").value }); toast("Saved"); await loadAll(); } catch (x) { toast(errText(x), true); }
+    b.disabled = false;
+  };
   $$("[data-member]").forEach(b => b.onclick = async () => {
     const on = b.dataset.on === "1", m = S.adm.members.find(x => x.id === b.dataset.member);
     if (!on && !confirm(`Remove ${m.name}? They lose access straight away. Their history is kept and you can restore them.`)) return;
@@ -605,22 +613,23 @@ bind.admin = () => {
 
 /* ===================== the winner moment ===================== */
 function maybeReveal() {
-  const c = comp();
-  if (!c || c.status !== "won" || S.st?.member !== "yes") return;
+  if (S.st?.member !== "yes") return;
+  const c = comp()?.status === "won" ? comp() : S.st.last?.status === "won" && S.st.last.day >= prevDay() ? S.st.last : null;
+  if (!c) return;
   let seen; try { seen = localStorage.getItem("s100-seen-" + c.id); } catch { }
   if (seen && !S.wonNow) return;
   S.wonNow = false;
   try { localStorage.setItem("s100-seen-" + c.id, "1"); } catch { }
-  reveal({ ...S.comps.find(x => x.id === c.id), guesses: c.guesses, entrants: c.entrants });
+  reveal({ ...S.comps.find(x => x.id === c.id), guesses: c.guesses, entrants: c.entrants ?? new Set((S.all || []).filter(g => g.comp_id === c.id).map(g => g.user_id)).size });
 }
 function reveal(c) {
   const layer = $("#layer"), mine = c.winner === S.uid, w = person(c.winner), prev = document.activeElement;
   layer.innerHTML = `<div class="reveal" role="dialog" aria-modal="true" aria-labelledby="rv"><div class="ribbons" aria-hidden="true"></div><div class="reveal-in">
     <img class="pennant" src="brand/patch.webp" alt="" width="300" height="103">
-    <p class="eyebrow" id="rv">${mine ? "You found it" : "We have a winner"} · Competition ${no(c.n)}</p>
+    <p class="eyebrow" id="rv">${mine ? "You found it" : "We have a winner"} · Game ${no(c.n)}</p>
     <p class="rollnum" id="roll" aria-live="off">00</p><p class="sr">The winning number is ${c.winning_number}.</p>
     <div class="who fade-up" style="animation-delay:1.6s">${av(c.winner, "lg")}<div><b>${esc(mine ? "You" : w.name)}</b><small>${mine ? "Brilliance looks good on you." : `guessed ${c.winning_number} on ${fDay(c.won_at)}`}</small></div></div>
-    <div class="facts fade-up" style="animation-delay:1.8s"><div><b>${dayCount(c)}</b><i>Days</i></div><div><b>${c.guesses ?? comp()?.guesses ?? "–"}</b><i>Guesses</i></div><div><b>${c.entrants ?? comp()?.entrants ?? "–"}</b><i>Players</i></div></div>
+    <div class="facts fade-up" style="animation-delay:1.8s"><div><b>${pad(c.n)}</b><i>Game</i></div><div><b>${c.guesses ?? comp()?.guesses ?? "–"}</b><i>Guesses</i></div><div><b>${c.entrants ?? comp()?.entrants ?? "–"}</b><i>Players</i></div></div>
     <div class="acts fade-up" style="animation-delay:2s"><button class="btn btn-ivory btn-big" id="vc">${ic.share} Share victory card</button>
       ${mine ? `<button class="btn btn-ghost" id="ct">${ic.doc} Winner certificate</button>` : ""}<button class="btn btn-quiet" id="rx">Close</button></div></div></div>`;
   const roll = $("#roll"), target = c.winning_number, t0 = performance.now(), dur = reduced.matches ? 0 : 1500;
@@ -663,11 +672,11 @@ function victoryCard(c) {
     const pw = 560, ph = pw * patchImg.naturalHeight / patchImg.naturalWidth || 192;
     x.shadowColor = "rgba(40,0,2,.45)"; x.shadowBlur = 40; x.shadowOffsetY = 16; x.drawImage(patchImg, (W - pw) / 2, 110, pw, ph); x.shadowColor = "transparent";
     x.textAlign = "center"; x.fillStyle = "#F1E6DA"; x.font = "700 30px Inter"; x.letterSpacing = "8px";
-    x.fillText(`COMPETITION ${no(c.n).toUpperCase()} · WINNING NUMBER`, W / 2, 420); x.letterSpacing = "0px";
+    x.fillText(`GAME ${no(c.n).toUpperCase()} · WINNING NUMBER`, W / 2, 420); x.letterSpacing = "0px";
     x.fillStyle = "#FAF8F5"; x.font = "400 420px Anton"; x.shadowColor = "rgba(40,0,2,.5)"; x.shadowBlur = 40; x.fillText(String(c.winning_number), W / 2, 820); x.shadowColor = "transparent";
     x.font = "400 92px Anton"; x.fillText(person(c.winner).name.toUpperCase(), W / 2, 960);
     x.font = "600 34px Inter"; x.fillStyle = "rgba(250,248,245,.9)";
-    x.fillText(`${plural(dayCount(c), "day")} · ${plural(c.guesses || 0, "guess", "guesses")} · ${fDate(c.won_at)}`, W / 2, 1030);
+    x.fillText(`${plural(c.guesses || 0, "guess", "guesses")} · ${fDate(c.won_at)}`, W / 2, 1030);
     x.fillStyle = "#F1E6DA"; rr(x, W / 2 - 330, 1120, 660, 92, 46); x.fill();
     x.fillStyle = "#7A0006"; x.font = "700 28px Inter"; x.letterSpacing = "6px"; x.fillText("SAME FRIENDS. HIGHER STAKES.", W / 2, 1177); x.letterSpacing = "0px";
     return cv;
@@ -685,8 +694,7 @@ function certificate(c) {
     x.fillStyle = "#1F1314"; x.font = "400 128px Anton"; x.fillText(person(c.winner).name.toUpperCase(), W / 2, 520);
     x.font = "500 34px Inter"; x.fillStyle = "#5A4546";
     x.fillText(`guessed the hidden number ${c.winning_number} exactly`, W / 2, 600);
-    x.fillText(`to win SUBAR100 Competition ${no(c.n)} on day ${dayCount(c)}.`, W / 2, 650);
-    if (c.prize) { x.fillStyle = "#7A0006"; x.font = "600 32px Inter"; x.fillText(`Prize: ${c.prize}`, W / 2, 720); }
+    x.fillText(`to win SUBAR100 Game ${no(c.n)} on ${fDate(c.won_at)}.`, W / 2, 650);
     x.strokeStyle = "#D9C9BB"; x.lineWidth = 2; x.beginPath(); x.moveTo(260, 900); x.lineTo(700, 900); x.moveTo(900, 900); x.lineTo(1340, 900); x.stroke();
     x.fillStyle = "#1F1314"; x.font = "600 30px Inter"; x.fillText(fDate(c.won_at), 480, 880); x.fillText("Town House 10", 1120, 880);
     x.fillStyle = "#6E5859"; x.font = "700 18px Inter"; x.letterSpacing = "6px"; x.fillText("DATE", 480, 940); x.fillText("CLUB", 1120, 940); x.letterSpacing = "0px";

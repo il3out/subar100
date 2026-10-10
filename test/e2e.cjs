@@ -36,7 +36,8 @@ async function audit(page, label) {
   ok(`${label}: no sideways overflow`, over <= 0, over);
 }
 async function join(page, code, name, email) {
-  await page.goto(BASE + "/?invite=" + code);
+  await page.goto(BASE); await page.waitForSelector("[data-mode=join]"); await page.click("[data-mode=join]");
+  if (code) { await page.click(".admin-code summary"); await page.fill("#code", code); }
   await page.fill("#nm", name); await page.fill("#em", email); await page.fill("#pw", "correct-horse-9");
   await page.click("[data-act=join]");
   await page.waitForSelector(".hero", { timeout: 10000 });
@@ -55,28 +56,25 @@ async function join(page, code, name, email) {
   consoleErrs.length = 0; bad.length = 0;   // that 400 was the point of the test
   const founder = (await q1("select code from invites where note = 'Founder'")).code;
   await join(A.page, founder, "Abdal", "abdal@x.test");
-  ok("founder lands on home as admin", await A.page.isVisible(".tabbar a[href='#/admin']"));
-  await shot(A.page, "02-home-no-competition-phone"); await audit(A.page, "home (no competition)");
+  ok("founder code makes you admin", await A.page.isVisible(".tabbar a[href='#/admin']"));
+  ok("today's game is already open, no setup needed", (await A.page.textContent(".hero")).includes("Game No. 01"));
 
   console.log("Admin");
   await A.page.click(".tabbar a[href='#/admin']");
-  await A.page.waitForSelector("#startF"); await A.page.waitForSelector("#invF");
-  await A.page.fill("#pz", "Dinner at Freej Swaileh"); await A.page.fill("#nt", "Competition one is live. One guess a day, good luck.");
-  await A.page.click("#startF button"); await A.page.waitForSelector("#infoF");
-  ok("admin starts a competition", (await q1("select count(*)::int c from comps where status='open'")).c === 1);
-  await A.page.fill("#invN", "Faisal"); await A.page.click("#invF button");
-  await A.page.waitForSelector("#shareNew");
-  const codeF = (await q1("select code from invites where note = 'Faisal'")).code;
-  ok("admin creates an invite", !!codeF);
-  await A.page.waitForTimeout(600);
+  await A.page.waitForSelector("#clubF"); await A.page.waitForSelector("#main .rows");
+  await A.page.fill("#pz", "Dinner at Freej Swaileh"); await A.page.fill("#nt", "A new number every day. Good luck.");
+  await A.page.click("#clubF button"); await A.page.waitForTimeout(600);
+  ok("admin sets the prize and note", (await q1("select prize from club")).prize === "Dinner at Freej Swaileh");
+  ok("no invite tools remain", !(await A.page.$("#invF")));
   await shot(A.page, "03-admin-phone"); await audit(A.page, "admin");
 
-  console.log("A friend joins and guesses");
+  console.log("A friend signs up with no code and guesses");
   const F = await person(browser);
-  await join(F.page, codeF, "Faisal", "faisal@x.test");
-  ok("invited friend joins as a normal member", (await F.page.$$("a[href='#/admin']")).length === 0);
+  await join(F.page, null, "Faisal", "faisal@x.test");
+  ok("anyone can sign up and play, as a normal member", (await F.page.$$("a[href='#/admin']")).length === 0);
+  ok("prize shows on home", (await F.page.textContent(".note")).includes("Freej Swaileh"));
   await shot(F.page, "04-home-open-phone"); await audit(F.page, "home (open)");
-  const target = (await q1("select target from comp_secret")).target;
+  const target = (await q1("select target from comp_secret s join comps c on c.id = s.comp_id where c.day = public.kw_today()")).target;
   const miss = target === 37 ? 38 : 37;
   await F.page.click("a[href='#/guess']"); await F.page.waitForSelector("#num");
   await shot(F.page, "05-guess-phone", false); await audit(F.page, "guess");
@@ -113,12 +111,8 @@ async function join(page, code, name, email) {
   ok("browser storage holds no hidden number", !/target|secret/i.test(stored));
 
   console.log("Second friend wins");
-  // create the invite as the admin through the API rules, not as the superuser
-  await A.page.evaluate(async () => { window._c = (await (await fetch("/rest/v1/rpc/create_invite", { method: "POST", headers: { "content-type": "application/json", apikey: "x", authorization: "Bearer " + JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => k.includes("auth-token")))).access_token }, body: JSON.stringify({ p_note: "Mubarak" }) })).json()); });
-  const codeMub = await A.page.evaluate(() => window._c);
-  ok("admin API creates an invite", typeof codeMub === "string" && codeMub.length === 8, codeMub);
   const M = await person(browser, "phone");
-  await join(M.page, codeMub, "Mubarak", "mubarak@x.test");
+  await join(M.page, null, "Mubarak", "mubarak@x.test");
   await M.page.click("a[href='#/guess']"); await M.page.waitForSelector("#num");
   await M.page.fill("#num", String(target)); await M.page.click("#lock"); await M.page.waitForSelector("#go");
   await M.page.click("#go");
@@ -139,25 +133,47 @@ async function join(page, code, name, email) {
   await F.page.reload(); await F.page.waitForSelector(".reveal #rx", { timeout: 8000 });
   ok("other members get the reveal on their next load", (await F.page.textContent("#rv")).includes("We have a winner"));
   await F.page.click("#rx");
-  ok("home shows the closed state with the number", (await F.page.textContent(".hero")).includes(String(target)));
-  await F.page.goto(BASE + "/#/guess"); await F.page.waitForSelector(".empty");
+  ok("home shows today won, with the number", (await F.page.textContent(".hero")).includes(String(target)));
+  await F.page.goto(BASE + "/#/guess"); await F.page.waitForSelector("#lh");
   ok("guessing is locked after a win", !(await F.page.isVisible("#num")));
   await F.page.reload(); await F.page.waitForSelector(".view");
   ok("reveal is not repeated once seen", !(await F.page.isVisible(".reveal")));
 
-  console.log("Board, recap, profile");
-  await F.page.goto(BASE + "/#/board"); await F.page.waitForSelector(".rows");
-  await shot(F.page, "13-board-phone"); await audit(F.page, "board");
-  await F.page.click("[data-t=winners]"); await F.page.waitForTimeout(300);
-  await shot(F.page, "14-winners-phone");
-  await F.page.click("a[href='#/comp/1']"); await F.page.waitForSelector("table");
-  ok("recap reveals every guess once won", (await F.page.$$("tbody tr")).length === 2);
+  console.log("Midnight: a day with no winner");
+  const shift = async () => db.query("update comps set day = day - 1, start_day = start_day - 1 where day is not null; update guesses set day = day - 1; update checkins set day = day - 1; update players set last_try = null");
+  await shift();
+  await F.page.goto(BASE + "/#/play"); await F.page.reload(); await F.page.waitForSelector(".hero");
+  ok("a new game opens by itself the next day", (await F.page.textContent(".hero")).includes("Game No. 02") && await F.page.isVisible("a[href='#/guess']"));
+  ok("home shows yesterday's result", (await F.page.textContent(".last")).includes("found it"));
+  const t2 = (await q1("select target from comp_secret s join comps c on c.id = s.comp_id where c.day = public.kw_today()")).target;
+  const off = t2 > 50 ? -7 : 7;
+  for (const [P, n] of [[F.page, t2 + off], [M.page, t2 + 2 * off]]) {
+    await P.goto(BASE + "/#/guess"); await P.reload(); await P.waitForSelector("#num"); await P.fill("#num", String(n)); await P.click("#lock"); await P.waitForSelector("#go"); await P.click("#go"); await P.waitForSelector("#lh");
+  }
+  await shift();
+  await F.page.goto(BASE + "/#/play"); await F.page.reload(); await F.page.waitForSelector(".last");
+  ok("a no-winner day reveals the number at midnight", (await F.page.textContent(".last")).includes("No winner") && (await F.page.textContent(".last")).includes(String(t2)));
+  ok("and names the closest guess", (await F.page.textContent(".last")).includes("Closest: You, 7 away"));
+  await shot(F.page, "13-home-next-day-phone");
+
+  console.log("Winners, board, recap, profile");
+  await F.page.click(".tabbar a[href='#/winners']"); await F.page.waitForSelector(".strip");
+  const wtext = await F.page.textContent("main");
+  ok("Winners tab lists every finished game", wtext.includes("Game No. 01") && wtext.includes("Game No. 02") && wtext.includes("No winner") && wtext.includes("Mubarak"));
+  ok("past numbers strip shows both numbers", (await F.page.$$(".strip .tok")).length === 2);
+  await shot(F.page, "14-winners-phone"); await audit(F.page, "winners");
+  await F.page.click(".strip a[href='#/comp/2']"); await F.page.waitForSelector("table");
+  ok("recap of a no-winner day shows everyone's guesses, closest first", (await F.page.$$("tbody tr")).length === 2 && (await F.page.textContent("tbody tr:first-child")).includes("Faisal"));
+  await F.page.goto(BASE + "/#/comp/1"); await F.page.waitForSelector("table");
+  ok("recap of a won day shows every guess", (await F.page.$$("tbody tr")).length === 2 && await F.page.isVisible("#card"));
   await shot(F.page, "15-recap-phone"); await audit(F.page, "recap");
+  await F.page.goto(BASE + "/#/board"); await F.page.waitForSelector(".rows");
+  await shot(F.page, "16-board-phone"); await audit(F.page, "board");
   await F.page.goto(BASE + "/#/you"); await F.page.waitForSelector("#nameF");
   await F.page.setInputFiles("#avf", { name: "a.png", mimeType: "image/png", buffer: fs.readFileSync(path.join(__dirname, "..", "icon-192.png")) });
   await F.page.waitForSelector(".profile-head .av img", { timeout: 8000 });
   ok("profile photo uploads and shows", true);
-  await shot(F.page, "16-you-phone"); await audit(F.page, "profile");
+  await shot(F.page, "16b-you-phone"); await audit(F.page, "profile");
 
   console.log("Theme");
   ok("dark is the default mode", (await F.page.getAttribute("html", "data-theme")) === "dark");
@@ -169,18 +185,16 @@ async function join(page, code, name, email) {
   await F.page.goto(BASE + "/#/board"); await F.page.waitForSelector(".rows"); await audit(F.page, "board (light)");
   await F.page.click("#themeBtn"); await F.page.waitForTimeout(300);
 
-  console.log("Admin after the win");
-  await A.page.reload(); await A.page.waitForSelector(".reveal #rx"); await A.page.click("#rx");
-  await A.page.waitForSelector("#startF"); await A.page.waitForSelector("#main table"); await A.page.waitForTimeout(300);
-  ok("admin log reveals numbers after the win", (await A.page.textContent("table")).includes(String(miss)));
+  console.log("Admin after the games");
+  await A.page.goto(BASE + "/#/admin"); await A.page.reload(); await A.page.waitForSelector("#clubF"); await A.page.waitForSelector("#main table"); await A.page.waitForTimeout(300);
+  ok("admin log reveals numbers once games end", (await A.page.textContent("table")).includes(String(miss)));
   const fid = (await q1("select id from players where name='Faisal'")).id;
   A.page.once("dialog", d => d.accept());
   await A.page.click(`[data-member="${fid}"]`); await A.page.waitForTimeout(800);
   await F.page.reload(); await F.page.waitForSelector(".panel");
   ok("removed member is locked out", (await F.page.textContent(".panel")).includes("paused"));
   await A.page.click(`[data-member="${fid}"]`); await A.page.waitForTimeout(800);
-  await A.page.click("#startF button"); await A.page.waitForSelector("#infoF");
-  ok("admin starts competition 2 after the win", (await q1("select count(*)::int c from comps")).c === 2);
+  ok("restored member plays again", (await q1("select removed_at from players where id = $1", [fid])).removed_at === null);
 
   console.log("Tablet and desktop");
   for (const size of ["tablet", "desktop"]) {
@@ -191,7 +205,7 @@ async function join(page, code, name, email) {
     await shot(D.page, `20-home-${size}`); await audit(D.page, `home ${size}`);
     await D.page.goto(BASE + "/#/guess"); await D.page.waitForSelector("#num");
     await shot(D.page, `21-guess-${size}`, false); await audit(D.page, `guess ${size}`);
-    await D.page.goto(BASE + "/#/board"); await D.page.waitForSelector(".rows"); await shot(D.page, `22-board-${size}`);
+    await D.page.goto(BASE + "/#/winners"); await D.page.waitForSelector(".strip"); await shot(D.page, `22-winners-${size}`); await audit(D.page, `winners ${size}`);
     await D.page.goto(BASE + "/#/admin"); await D.page.waitForSelector("table"); await D.page.waitForTimeout(400);
     await shot(D.page, `23-admin-${size}`); await audit(D.page, `admin ${size}`);
     await D.ctx.close();
