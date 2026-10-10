@@ -16,7 +16,50 @@ const pad = n => String(n).padStart(2, "0");
 const no = n => `No. ${pad(n)}`;
 const prevDay = () => { const d = new Date(S.st.today + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
-const buzz = () => navigator.userActivation?.hasBeenActive && navigator.vibrate?.(8);
+/* ---------- feel: a haptic tap and a soft sound ---------- */
+// Haptics: Android vibrates; iPhone (iOS 18+) gets a tap through a hidden system switch, the only
+// haptic a web page can trigger there. Sound: short sounds synthesised on the fly, no audio files.
+const fx = (() => {
+  let ctx, sw, lastTick = 0;
+  const soundOn = () => { try { return localStorage.getItem("s100-sound") !== "off"; } catch { return true; } };
+  const haptic = (ms = 8) => {
+    if (!navigator.userActivation?.hasBeenActive) return;
+    if (navigator.vibrate) { navigator.vibrate(ms); return; }
+    if (!sw) { sw = document.createElement("label"); sw.ariaHidden = "true"; sw.style.cssText = "position:fixed;left:-99px;top:0;opacity:0;pointer-events:none";
+      sw.innerHTML = '<input type="checkbox" switch tabindex="-1">'; document.body.append(sw); }
+    sw.click();
+  };
+  const audio = () => {
+    if (!soundOn()) return null;
+    try { ctx ||= new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; }
+    if (ctx.state === "suspended") ctx.resume();
+    return ctx;
+  };
+  // a soft "tock" with a felt-like attack: a falling sine plus a tiny filtered noise click
+  const tock = (f0, f1, len, vol, click = .5) => {
+    const a = audio(); if (!a) return;
+    const t = a.currentTime + .005, o = a.createOscillator(), g = a.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + len);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + .004); g.gain.exponentialRampToValueAtTime(.0001, t + len);
+    o.connect(g).connect(a.destination); o.start(t); o.stop(t + len + .02);
+    if (click) {
+      const n = a.createBufferSource(), b = a.createBuffer(1, a.sampleRate * .02, a.sampleRate), d = b.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 4);
+      const bp = a.createBiquadFilter(), ng = a.createGain(); bp.type = "bandpass"; bp.frequency.value = 2400; bp.Q.value = 1.2;
+      ng.gain.value = vol * click; n.buffer = b; n.connect(bp).connect(ng).connect(a.destination); n.start(t);
+    }
+  };
+  return {
+    soundOn,
+    setSound(on) { try { localStorage.setItem("s100-sound", on ? "on" : "off"); } catch { } if (on) tock(900, 600, .06, .08); },
+    tick() { const now = performance.now(); if (now - lastTick < 38) return; lastTick = now; haptic(6); tock(1700, 1200, .028, .035, .35); },  // slider, +/-, typing
+    select() { haptic(12); tock(620, 300, .09, .11); },                     // tapped or rolled onto a number
+    lock() { haptic(22); tock(330, 150, .2, .16, .6); setTimeout(() => tock(660, 520, .12, .05, 0), 40); },   // locked in
+    win() { haptic(30); [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tock(f, f * .98, .25, .08, 0), i * 110)); },
+    haptic
+  };
+})();
+const buzz = () => fx.haptic(8);
 
 const I = (p, extra = "") => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${p}</svg>`;
 const ic = {
@@ -41,6 +84,8 @@ const ic = {
   pennant: I('<path d="M5 3v18M5 4.5l14 4.5-14 4.5"/>'),
   copy: I('<rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 8.5v-3a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/>'),
   theme: I('<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor"/>'),
+  sound: I('<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>'),
+  mute: I('<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/>'),
   doc: I('<path d="M6 2.5h8l4 4v15H6z"/><path d="M14 2.5v4h4M9 12h6M9 16h6"/>'),
   x: I('<path d="M6 6l12 12M18 6 6 18"/>')
 };
@@ -319,7 +364,7 @@ function heroHTML() {
   if (mine) return `<section class="card hero red stitch" aria-labelledby="ht">${top}
     <div class="hero-body"><div><h1 class="hero-title" id="ht">Locked in.</h1><p class="hero-sub">Not the number, at least not yet. Today's number and everyone's guesses are revealed at midnight, Kuwait time.</p></div>
     <div class="locked-num"><span class="tok" aria-label="Your guess today: ${mine.n}">${mine.n}</span><div><p class="eyebrow" style="color:var(--warm);margin:0 0 8px">Reveal in</p>${clockHTML(S.st.next)}</div></div></div></section>`;
-  return `<section class="card hero red stitch" aria-labelledby="ht">${top}<div class="die" aria-hidden="true">${dieSVG()}</div>
+  return `<section class="card hero red stitch" aria-labelledby="ht">${top}<a class="die" id="heroDie" href="#/guess" tabindex="-1" aria-hidden="true">${dieSVG()}</a>
     <div class="hero-body"><div><h1 class="hero-title" id="ht">Today's guess is open.</h1><p class="hero-sub">A new hidden number from 1 to 100 every day. First exact guess wins it.</p></div>
     <a class="btn btn-ivory btn-big" href="#/guess">Make your guess ${ic.arrow}</a></div></section>`;
 }
@@ -368,8 +413,9 @@ function guessView() {
     <section class="card pick" aria-labelledby="gh">
       <header class="pick-head"><p class="eyebrow">Game ${no(c.n)} · ${fDay(st.today)}</p><h1 class="h2" id="gh">Choose your number</h1></header>
       <div class="stage"><div class="die-flat" id="dieFlat" hidden aria-hidden="true">${dieSVG(String(S.val))}</div>
+        <button class="snd" id="snd" type="button" aria-pressed="${fx.soundOn()}" aria-label="Sound">${fx.soundOn() ? ic.sound : ic.mute}</button>
         <button class="roll" id="rnd">${ic.dice.replace('aria-hidden="true"', 'aria-hidden="true" width="16" height="16"')} Roll it</button>
-        <p class="drag-hint" aria-hidden="true">Drag the die to spin it</p></div>
+        <p class="drag-hint" aria-hidden="true">Tap a number or spin the die</p></div>
       <div class="controls">
       <div class="bignum" id="big"><label class="sr" for="num">Your number from 1 to 100</label>
         <input id="num" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" value="${S.val}" aria-describedby="gh-hint"></div>
@@ -382,7 +428,13 @@ function guessView() {
       </div>
     </section></div>`;
 }
-let DIE = null;   // the one 3D die (a promise), shared by every visit to the guess screen
+let DIE = null;   // the one 3D die (a promise), shared by the home screen and the guess screen
+const getDie = () => (DIE ||= import("./die.js").then(m => m.createDie(Object.assign(document.createElement("canvas"), { id: "die3d" }), { value: S.val })));
+bind.play = () => {   // home: the same die, turning slowly in the hero; tapping it opens the guess screen
+  const box = $("#heroDie"); if (!box) return;
+  getDie().then(d => { if (!box.isConnected) return; d.canvas.setAttribute("aria-hidden", "true"); box.prepend(d.canvas); box.classList.add("live"); d.attach({ value: 100, reduced: reduced.matches, showcase: true }); S.die = d; })
+    .catch(() => { DIE = null; });
+};
 bind.guess = () => {
   const inp = $("#num"), rng = $("#rng"), big = $("#big");
   if (!inp) return;
@@ -391,13 +443,13 @@ bind.guess = () => {
     v = Math.min(100, Math.max(1, v | 0)); S.val = v;
     if (inp.value !== String(v) && src !== "type") inp.value = v;
     rng.value = v; rng.style.setProperty("--p", `${(v - 1) / 99 * 100}%`);
-    if (v !== lastV) { lastV = v; buzz(); big.classList.remove("bump"); void big.offsetWidth; big.classList.add("bump"); }
+    if (v !== lastV) { lastV = v; src === "die" ? fx.select() : fx.tick(); big.classList.remove("bump"); void big.offsetWidth; big.classList.add("bump"); }
     if (src !== "die") { if (die) die.set(v); else $("#dieFlat").innerHTML = dieSVG(String(v)); }
   };
   // the 3D die loads only on this screen; without WebGL the flat die stands in
   // the 3D die is created once and moved into each visit's stage; without WebGL the flat die stands in
   const stage = $(".stage");
-  (DIE ||= import("./die.js").then(m => m.createDie(Object.assign(document.createElement("canvas"), { id: "die3d" }), { value: S.val })))
+  getDie()
     .then(d => { if (!stage.isConnected) return; d.canvas.setAttribute("aria-hidden", "true"); stage.prepend(d.canvas); d.attach({ value: S.val, reduced: reduced.matches, onPick: k => show(k, "die") }); die = S.die = d; })
     .catch(e => {
       console.warn("SUBAR100: 3D die unavailable", e);
@@ -421,8 +473,9 @@ bind.guess = () => {
     b.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(S.val + d); } };
   }
   $("#rnd").onclick = () => { const a = new Uint8Array(1); crypto.getRandomValues(a); const k = a[0] % 100 + 1; if (die) die.roll(k); else show(k); };
+  $("#snd").onclick = e => { const b = e.currentTarget, on = !fx.soundOn(); fx.setSound(on); b.setAttribute("aria-pressed", on); b.innerHTML = on ? ic.sound : ic.mute; };
   $("#lock").onclick = async () => {
-    show(+inp.value || S.val);
+    show(+inp.value || S.val); fx.lock();
     if (die) await Promise.race([die.lockIn(), new Promise(r => setTimeout(r, 700))]);   // settle exactly on the face first
     confirmSheet();
   };
@@ -658,7 +711,7 @@ function reveal(c) {
   const step = t => {
     const p = dur ? Math.min(1, (t - t0) / dur) : 1;
     if (p < 1) { roll.textContent = pad(1 + Math.floor(Math.random() * 100) % 100); requestAnimationFrame(step); }
-    else { roll.textContent = target; roll.classList.add("land"); buzz(); ribbons(); }
+    else { roll.textContent = target; roll.classList.add("land"); fx.win(); ribbons(); }
   };
   requestAnimationFrame(step);
   const full = { ...c, guesses: c.guesses ?? comp()?.guesses, entrants: c.entrants ?? comp()?.entrants };

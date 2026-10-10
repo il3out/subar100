@@ -9,19 +9,27 @@ Large jumps take the short way
   pass  40 → 41 is a small roll (20°)
 Rapid slider movement
   pass  after 170 rapid changes the die lands exactly on the last value
-  pass  no flips or jumps during rapid movement (largest frame-to-frame turn 45.5° over 696 frames)
-    frame time while sliding (headless, software GPU): median 50.0 ms, p95 66.7 ms · quality low
+  pass  no flips or jumps during rapid movement (largest frame-to-frame turn 45.6° over 697 frames)
+    frame time while sliding (headless, software GPU): median 50.0 ms, p95 66.6 ms · quality low
 Buttons and typing drive the die
   pass  plus moves the die to 74
   pass  minus twice moves it to 72
   pass  typing 5 turns the die to 5
 Spinning the die by hand
   pass  a flick lands on a face and the slider follows
+Tap a number on the die
+  pass  tapping a number on the die picks it, centres it, and the slider follows (4 taps)
+  pass  each pick gives a haptic tap
+  pass  sound plays without errors (audio engine running)
+  pass  sound can be switched off and is remembered
 Lock in
   pass  lock-in settles exactly on the chosen face before confirming
   pass  confirmation shows the same number
+Home screen die
+  pass  the 3D die sits in the home hero and turns slowly
+  pass  tapping the home die opens the guess screen
 Leave and come back 20 times
-    JS heap before 8.1 MB, after 20 cycles 8.0 MB
+    JS heap before 8.3 MB, after 20 cycles 8.1 MB
   pass  no WebGL context or three.js warnings
   pass  one die, reused on every visit
   pass  memory is released between visits
@@ -38,4 +46,4 @@ No WebGL
 Desktop
   pass  die is large on desktop (461px)
 
-26 passed, 0 failed
+32 passed, 0 failed

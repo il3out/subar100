@@ -331,6 +331,9 @@ export async function createDie(canvas = document.createElement("canvas"), { val
   const loop = t => {
     const raw = (t - (last || t)) / 1000, dt = Math.min(.05, raw); last = t;
     if (!lowQ && raw > 0 && raw < .5 && mode !== "idle") { timed++; slow += raw; if (timed === 24) { if (slow / timed > .04) degrade(); } }
+    if (mode === "show") {   // home screen: a slow, steady turn
+      dq.setFromAxisAngle(SHOW_AXIS, dt * .45); die.quaternion.premultiply(dq).normalize();
+    }
     if (mode === "coast") {   // after a finger flick: spin freely, then settle on whatever faces the lens
       integrate(dt); w.multiplyScalar(Math.exp(-dt * 3));
       if (w.length() < 2.5) { const k = front(); target = want(k); mode = "spring"; mark(k); if (k !== cur) { cur = k; pick(k); } }
@@ -362,6 +365,7 @@ export async function createDie(canvas = document.createElement("canvas"), { val
     }
     raf = mode === "idle" ? 0 : requestAnimationFrame(loop);
   };
+  const SHOW_AXIS = new V(.25, 1, .12).normalize();
   let dead = false, pick = onPick;
   const wake = () => { if (dead) return; canvas.dataset.settled = "0"; if (!raf) { last = 0; raf = requestAnimationFrame(loop); } };
   const size = () => { const wd = canvas.clientWidth, ht = canvas.clientHeight; if (!wd || !ht) return; renderer.setSize(wd, ht, false); cam.aspect = wd / ht; cam.updateProjectionMatrix(); renderer.render(scene, cam); };
@@ -369,28 +373,49 @@ export async function createDie(canvas = document.createElement("canvas"), { val
   canvas.dataset.face = value; canvas.dataset.settled = "1"; canvas.dataset.quality = "high";
 
   // ---- finger / mouse spin
-  const onDown = e => { canvas.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, t: performance.now(), v: new V(), speed: 0 }; mode = "drag"; w.set(0, 0, 0); wake(); };
+  const onDown = e => { if (mode === "show") return; canvas.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), t: performance.now(), v: new V(), speed: 0, moved: 0 }; mode = "drag"; w.set(0, 0, 0); wake(); };
   const onMove = e => {
     if (!drag) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y, now = performance.now(), dt = Math.max(1, now - drag.t) / 1000;
+    drag.moved = Math.max(drag.moved, Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0));
     const ax = new V(dy, dx, 0), ang = ax.length() * .011;
     if (ang) die.quaternion.premultiply(dq.setFromAxisAngle(ax.clone().normalize(), ang)).normalize();
     drag.v.lerp(ax.normalize().multiplyScalar(ang / dt), .5); drag.speed = drag.v.length() / 7;
     Object.assign(drag, { x: e.clientX, y: e.clientY, t: now });
   };
-  const onUp = () => { if (!drag) return; w.copy(drag.v); drag = null; mode = reduced ? "spring" : "coast"; if (reduced) { const k = front(); target = want(k); die.quaternion.copy(target); mark(k); if (k !== cur) { cur = k; pick(k); } } wake(); };
+  // tap a number on the die to pick it: a ray from the finger to the solid finds the face
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), inv = new THREE.Matrix4();
+  const faceAt = (x, y) => {
+    const r = canvas.getBoundingClientRect();
+    ndc.set((x - r.left) / r.width * 2 - 1, -(y - r.top) / r.height * 2 + 1);
+    ray.setFromCamera(ndc, cam);
+    const hit = ray.intersectObject(die.children[0], false)[0]; if (!hit) return 0;
+    const p = hit.point.clone().applyMatrix4(inv.copy(die.matrixWorld).invert()).normalize();
+    let best = 0, z = -2; for (let i = 0; i < N; i++) { const d = F[i].n.dot(p); if (d > z) { z = d; best = i; } }
+    return best + 1;
+  };
+  const onUp = e => {
+    if (!drag) return;
+    if (drag.moved < 8 && performance.now() - drag.t0 < 450) {   // a tap, not a spin
+      const k = faceAt(e.clientX, e.clientY); drag = null; mode = "spring";
+      if (k) { api.set(k); pick(k, "tap"); } else wake();
+      return;
+    }
+    w.copy(drag.v); drag = null; mode = reduced ? "spring" : "coast"; if (reduced) { const k = front(); target = want(k); die.quaternion.copy(target); mark(k); if (k !== cur) { cur = k; pick(k); } } wake(); };
   canvas.addEventListener("pointerdown", onDown); canvas.addEventListener("pointermove", onMove);
   canvas.addEventListener("pointerup", onUp); canvas.addEventListener("pointercancel", onUp);
 
   const api = {
     canvas,
     /** move into a screen: start from value, report spins through onPick */
-    attach({ value: v = cur, onPick: f = pick, reduced: r = reduced } = {}) {
+    attach({ value: v = cur, onPick: f = pick, reduced: r = reduced, showcase = false } = {}) {
       pick = f; reduced = r; drag = null; lock = null; settleWaiters.splice(0);
-      cur = Math.min(N, Math.max(1, v | 0)); target = want(cur); die.quaternion.copy(target); w.set(0, 0, 0);
+      cur = Math.min(N, Math.max(1, v | 0)); target = want(cur); w.set(0, 0, 0);
+      if (!showcase) die.quaternion.copy(target);   // the home spin just carries on from where it was
       lift = 0; sc = scT = 1; sv = 0; holder.position.y = 0; holder.scale.setScalar(1); mark(cur);
+      chosen.visible = !showcase;
       canvas.dataset.face = cur; canvas.dataset.settled = "1"; mode = "idle";
-      requestAnimationFrame(size);
+      requestAnimationFrame(() => { size(); if (showcase && !reduced) { mode = "show"; wake(); } });
     },
     /** leave the screen: stop drawing until attached again */
     detach() { cancelAnimationFrame(raf); raf = 0; mode = "idle"; drag = null; pick = () => { }; settleWaiters.splice(0).forEach(r => r(cur)); },
@@ -419,6 +444,13 @@ export async function createDie(canvas = document.createElement("canvas"), { val
       });
     },
     resetStats() { stats.maxStep = 0; stats.frames = 0; },
+    /** where face k's centre is on screen (client px), or null if it faces away; used by the tests */
+    screenOf(k) {
+      const wp = F[k - 1].center.clone().applyMatrix4(die.matrixWorld), n = F[k - 1].n.clone().applyQuaternion(die.quaternion);
+      if (n.dot(cam.position.clone().sub(wp).normalize()) < .5) return null;
+      const p = wp.project(cam), r = canvas.getBoundingClientRect();
+      return { x: r.left + (p.x + 1) / 2 * r.width, y: r.top + (1 - p.y) / 2 * r.height };
+    },
     /** read-only state, used by the tests */
     inspect() {
       const p = F[cur - 1].center.clone().applyQuaternion(die.quaternion).add(holder.position).project(cam);

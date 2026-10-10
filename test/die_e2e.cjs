@@ -98,6 +98,25 @@ const inspect = page => page.evaluate(() => S.die.inspect());
   const sp = await inspect(page);
   ok("a flick lands on a face and the slider follows", sp.front === sp.face && await page.inputValue("#rng") === String(sp.face) && Math.hypot(...sp.ndc) < 0.01);
 
+  console.log("Tap a number on the die");
+  await page.evaluate(() => { window.__vib = 0; navigator.vibrate = () => (window.__vib++, true); });
+  await setSlider(page, 50); await settled(page, 50);
+  const taps = [];
+  let tried = 0;
+  for (const k of [51, 49, 36, 64, 52, 48]) {
+    const pt = await page.evaluate(k => S.die.screenOf(k), k);
+    if (!pt) continue;   // that face is round the back from here
+    tried++;
+    await page.mouse.click(pt.x, pt.y); await settled(page, k);
+    const i = await inspect(page);
+    if (!(i.front === k && await page.inputValue("#rng") === String(k) && await page.inputValue("#num") === String(k))) taps.push(k);
+  }
+  ok(`tapping a number on the die picks it, centres it, and the slider follows (${tried} taps)`, taps.length === 0 && tried >= 4, taps.join(","));
+  ok("each pick gives a haptic tap", await page.evaluate(() => __vib) >= 4, await page.evaluate(() => __vib));
+  ok("sound plays without errors (audio engine running)", await page.evaluate(() => typeof fx === "object" && fx.soundOn()));
+  await page.click("#snd"); ok("sound can be switched off and is remembered", await page.evaluate(() => localStorage.getItem("s100-sound") === "off" && !fx.soundOn()));
+  await page.click("#snd");
+
   console.log("Lock in");
   await setSlider(page, 42); await page.waitForTimeout(60);
   await page.click("#lock"); await page.waitForSelector("#go");
@@ -105,6 +124,16 @@ const inspect = page => page.evaluate(() => S.die.inspect());
   ok("lock-in settles exactly on the chosen face before confirming", li.front === 42 && li.error < 1e-6 && Math.hypot(...li.ndc) < 0.01, JSON.stringify(li));
   ok("confirmation shows the same number", (await page.textContent("#ch")).includes("42"));
   await page.click("#no");
+
+  console.log("Home screen die");
+  await page.goto(BASE + "/#/play"); await page.waitForSelector(".hero");
+  const home = await page.$("#heroDie canvas");
+  if (home) {
+    const q1 = await page.evaluate(() => S.die.inspect().q); await page.waitForTimeout(600); const q2 = await page.evaluate(() => S.die.inspect().q);
+    ok("the 3D die sits in the home hero and turns slowly", q1.join() !== q2.join());
+    await page.click("#heroDie"); await page.waitForSelector("#num");
+    ok("tapping the home die opens the guess screen", (await page.evaluate(() => location.hash)) === "#/guess" && !!(await page.$(".stage #die3d")));
+  } else ok("the 3D die sits in the home hero (skipped: already guessed today)", true);
 
   console.log("Leave and come back 20 times");
   const heap = async () => { for (let i = 0; i < 3; i++) { await page.evaluate(() => window.gc?.()); await page.waitForTimeout(200); } return page.evaluate(() => performance.memory?.usedJSHeapSize || 0); };

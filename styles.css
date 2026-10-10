@@ -175,7 +175,9 @@ textarea.inp{min-height:84px;resize:vertical}
 .hero-body>.hero-sub,.hero-body>div{justify-self:stretch}
 .die~.hero-body .hero-title{max-width:6.6ch}
 .die~.hero-body .hero-sub{max-width:min(30ch,60%)}
-.hero .die{position:absolute;right:-38px;top:56px;width:min(50%,250px);z-index:0;pointer-events:none}
+.hero .die{position:absolute;right:-38px;top:56px;width:min(50%,250px);aspect-ratio:1;z-index:0;display:block;-webkit-tap-highlight-color:transparent}
+.hero .die canvas{width:100%;height:100%;display:block;pointer-events:none}
+.hero .die.live svg{display:none}
 @media (min-width:600px){.hero{padding:32px 32px;min-height:360px}.hero .die{right:10px;top:40px;width:260px}}
 .pill{white-space:nowrap;display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 12px;border-radius:999px;font:700 11.5px/1 Inter;letter-spacing:.1em;text-transform:uppercase}
 .pill-ivory{background:var(--ivory);color:var(--crimson)}
@@ -386,3 +388,9 @@ textarea.inp{min-height:84px;resize:vertical}
 .admin-code[open] summary::before{content:"− "}
 
 .drag-hint.why{position:static;margin-top:8px;color:var(--ink-2);font-size:12.5px;max-width:30ch;margin-inline:auto}
+
+.snd{position:absolute;left:-6px;top:4px;z-index:2;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--card-hi);box-shadow:var(--sh1),inset 0 0 0 1.5px var(--line);color:var(--ink-2);transition:transform .4s var(--spring)}
+.snd:active{transform:scale(.92)} .snd svg{width:18px;height:18px} .snd[aria-pressed="true"]{color:var(--brand)}
+/* let taps through the hero's text to the die behind it; links and buttons stay clickable */
+.hero:has(.die) .hero-body, .hero:has(.die) .hero-top{pointer-events:none}
+.hero:has(.die) .hero-body :is(a,button), .hero:has(.die) .hero-top :is(a,button){pointer-events:auto}
