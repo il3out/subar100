@@ -1,0 +1,84 @@
+Door and joining
+  pass  door: no WCAG 2.1 AA violations
+  pass  door: no sideways overflow
+  pass  wrong password shows a clear error
+  pass  founder lands on home as admin
+  pass  home (no competition): no WCAG 2.1 AA violations
+  pass  home (no competition): no sideways overflow
+Admin
+  pass  admin starts a competition
+  pass  admin creates an invite
+  pass  admin: no WCAG 2.1 AA violations
+  pass  admin: no sideways overflow
+A friend joins and guesses
+  pass  invited friend joins as a normal member
+  pass  home (open): no WCAG 2.1 AA violations
+  pass  home (open): no sideways overflow
+  pass  guess: no WCAG 2.1 AA violations
+  pass  guess: no sideways overflow
+  pass  3D die renders with WebGL
+  pass  the slider turns the die to the number
+  pass  spinning the die moves the slider to the face shown
+  pass  plus button steps the number
+  pass  typing is limited to 1-100
+  pass  confirmation sheet asks before locking
+  pass  confirm sheet: no WCAG 2.1 AA violations
+  pass  confirm sheet: no sideways overflow
+  pass  server confirms the locked guess
+  pass  no higher or lower hint
+  pass  locked: no WCAG 2.1 AA violations
+  pass  locked: no sideways overflow
+  pass  the guess screen stays locked for the rest of the day
+  pass  home shows the locked number and countdown
+  pass  browser storage holds no hidden number
+Second friend wins
+  pass  admin API creates an invite
+  pass  exact guess triggers the winner reveal
+  pass  winner reveal: no WCAG 2.1 AA violations
+  pass  winner reveal: no sideways overflow
+  pass  victory card downloads as an image
+  pass  winner certificate downloads
+Everyone else sees it closed
+  pass  other members get the reveal on their next load
+  pass  home shows the closed state with the number
+  pass  guessing is locked after a win
+  pass  reveal is not repeated once seen
+Board, recap, profile
+  pass  board: no WCAG 2.1 AA violations
+  pass  board: no sideways overflow
+  pass  recap reveals every guess once won
+  pass  recap: no WCAG 2.1 AA violations
+  pass  recap: no sideways overflow
+  pass  profile photo uploads and shows
+  pass  profile: no WCAG 2.1 AA violations
+  pass  profile: no sideways overflow
+Theme
+  pass  dark is the default mode
+  pass  switch turns on light mode
+  pass  light choice is remembered
+  pass  home (light): no WCAG 2.1 AA violations
+  pass  home (light): no sideways overflow
+  pass  board (light): no WCAG 2.1 AA violations
+  pass  board (light): no sideways overflow
+Admin after the win
+  pass  admin log reveals numbers after the win
+  pass  removed member is locked out
+  pass  admin starts competition 2 after the win
+Tablet and desktop
+  pass  home tablet: no WCAG 2.1 AA violations
+  pass  home tablet: no sideways overflow
+  pass  guess tablet: no WCAG 2.1 AA violations
+  pass  guess tablet: no sideways overflow
+  pass  admin tablet: no WCAG 2.1 AA violations
+  pass  admin tablet: no sideways overflow
+  pass  home desktop: no WCAG 2.1 AA violations
+  pass  home desktop: no sideways overflow
+  pass  guess desktop: no WCAG 2.1 AA violations
+  pass  guess desktop: no sideways overflow
+  pass  admin desktop: no WCAG 2.1 AA violations
+  pass  admin desktop: no sideways overflow
+  pass  no API response ever contained the hidden number field
+  pass  no console errors
+  pass  no failed requests
+
+73 passed, 0 failed

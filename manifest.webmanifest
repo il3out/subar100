@@ -1,0 +1,14 @@
+{
+  "name": "SUBAR100",
+  "short_name": "SUBAR100",
+  "description": "A private daily 100-sided dice guessing game for Town House 10.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#110509",
+  "theme_color": "#110509",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

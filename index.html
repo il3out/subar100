@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>SUBAR100</title>
+<meta name="description" content="SUBAR100. A private daily 100-sided dice guessing game for Town House 10.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#110509">
+<meta name="color-scheme" content="dark light">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="SUBAR100">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preload" href="fonts/Anton.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/Inter-500.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="styles.css">
+<script src="theme.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="mast" id="mast" hidden></header>
+<main id="main" tabindex="-1"><div class="boot" aria-label="Loading"><img src="brand/patch.webp" alt="" width="240" height="82"></div></main>
+<nav class="tabbar" id="tabbar" aria-label="Sections" hidden></nav>
+<div id="layer"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="vendor/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
