@@ -384,3 +384,5 @@ textarea.inp{min-height:84px;resize:vertical}
 .admin-code summary::-webkit-details-marker{display:none}
 .admin-code summary::before{content:"+ "}
 .admin-code[open] summary::before{content:"− "}
+
+.drag-hint.why{position:static;margin-top:8px;color:var(--ink-2);font-size:12.5px;max-width:30ch;margin-inline:auto}

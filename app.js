@@ -399,7 +399,14 @@ bind.guess = () => {
   const stage = $(".stage");
   (DIE ||= import("./die.js").then(m => m.createDie(Object.assign(document.createElement("canvas"), { id: "die3d" }), { value: S.val })))
     .then(d => { if (!stage.isConnected) return; d.canvas.setAttribute("aria-hidden", "true"); stage.prepend(d.canvas); d.attach({ value: S.val, reduced: reduced.matches, onPick: k => show(k, "die") }); die = S.die = d; })
-    .catch(() => { $("#dieFlat").hidden = false; $(".drag-hint").hidden = true; stage.classList.add("flat"); });
+    .catch(e => {
+      console.warn("SUBAR100: 3D die unavailable", e);
+      DIE = null;   // try again next visit (e.g. after the browser's graphics are switched on)
+      const gl = (() => { try { return !!document.createElement("canvas").getContext("webgl2"); } catch { return false; } })();
+      $("#dieFlat").hidden = false; stage.classList.add("flat");
+      const h = $(".drag-hint"); h.hidden = false; h.classList.add("why");
+      h.textContent = gl ? "The 3D die couldn't start here. The flat die works the same." : "3D is off in this browser. Turn on graphics acceleration to see the 3D die.";
+    });
   rng.oninput = () => show(+rng.value, "range");
   inp.oninput = () => { const d = inp.value.replace(/\D/g, "").slice(0, 3); inp.value = d; if (d && +d >= 1 && +d <= 100) show(+d, "type"); };
   inp.onblur = () => show(+inp.value || S.val);
