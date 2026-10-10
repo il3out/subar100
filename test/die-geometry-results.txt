@@ -1,0 +1,2 @@
+geometry built in 36 ms · 100 faces · 196 corners · 294 edges · smallest face spacing 18.5° · largest k→k+1 turn 23.8°
+911 passed, 0 failed

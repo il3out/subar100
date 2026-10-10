@@ -185,7 +185,7 @@ addEventListener("scroll", () => $("#mast").classList.toggle("scrolled", scrollY
 /* ===================== render ===================== */
 function render() {
   const main = $("#main");
-  S.die?.destroy(); S.die = null;
+  S.die?.detach(); S.die = null;
   if (!S.ready) return;
   if (S.recovery) { bare(); main.innerHTML = doorHTML("reset"); return bindDoor(); }
   if (!S.uid) { bare(); main.innerHTML = doorHTML("signin"); return bindDoor(); }
@@ -367,7 +367,7 @@ function guessView() {
   return `<div class="view guess-wrap">
     <section class="card pick" aria-labelledby="gh">
       <header class="pick-head"><p class="eyebrow">Game ${no(c.n)} · ${fDay(st.today)}</p><h1 class="h2" id="gh">Choose your number</h1></header>
-      <div class="stage"><canvas id="die3d" aria-hidden="true"></canvas><div class="die-flat" id="dieFlat" hidden aria-hidden="true">${dieSVG(String(S.val))}</div>
+      <div class="stage"><div class="die-flat" id="dieFlat" hidden aria-hidden="true">${dieSVG(String(S.val))}</div>
         <button class="roll" id="rnd">${ic.dice.replace('aria-hidden="true"', 'aria-hidden="true" width="16" height="16"')} Roll it</button>
         <p class="drag-hint" aria-hidden="true">Drag the die to spin it</p></div>
       <div class="controls">
@@ -382,6 +382,7 @@ function guessView() {
       </div>
     </section></div>`;
 }
+let DIE = null;   // the one 3D die (a promise), shared by every visit to the guess screen
 bind.guess = () => {
   const inp = $("#num"), rng = $("#rng"), big = $("#big");
   if (!inp) return;
@@ -394,9 +395,11 @@ bind.guess = () => {
     if (src !== "die") { if (die) die.set(v); else $("#dieFlat").innerHTML = dieSVG(String(v)); }
   };
   // the 3D die loads only on this screen; without WebGL the flat die stands in
-  import("./die.js").then(m => m.createDie($("#die3d"), { value: S.val, reduced: reduced.matches, onPick: k => show(k, "die") }))
-    .then(d => { if ($("#die3d")?.isConnected) { die = S.die = d; } else d.destroy(); })
-    .catch(() => { $("#die3d").hidden = true; $("#dieFlat").hidden = false; $(".drag-hint").hidden = true; });
+  // the 3D die is created once and moved into each visit's stage; without WebGL the flat die stands in
+  const stage = $(".stage");
+  (DIE ||= import("./die.js").then(m => m.createDie(Object.assign(document.createElement("canvas"), { id: "die3d" }), { value: S.val })))
+    .then(d => { if (!stage.isConnected) return; d.canvas.setAttribute("aria-hidden", "true"); stage.prepend(d.canvas); d.attach({ value: S.val, reduced: reduced.matches, onPick: k => show(k, "die") }); die = S.die = d; })
+    .catch(() => { $("#dieFlat").hidden = false; $(".drag-hint").hidden = true; stage.classList.add("flat"); });
   rng.oninput = () => show(+rng.value, "range");
   inp.oninput = () => { const d = inp.value.replace(/\D/g, "").slice(0, 3); inp.value = d; if (d && +d >= 1 && +d <= 100) show(+d, "type"); };
   inp.onblur = () => show(+inp.value || S.val);
@@ -411,7 +414,11 @@ bind.guess = () => {
     b.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(S.val + d); } };
   }
   $("#rnd").onclick = () => { const a = new Uint8Array(1); crypto.getRandomValues(a); const k = a[0] % 100 + 1; if (die) die.roll(k); else show(k); };
-  $("#lock").onclick = () => { show(+inp.value || S.val); confirmSheet(); };
+  $("#lock").onclick = async () => {
+    show(+inp.value || S.val);
+    if (die) await Promise.race([die.lockIn(), new Promise(r => setTimeout(r, 700))]);   // settle exactly on the face first
+    confirmSheet();
+  };
 };
 
 function confirmSheet() {
